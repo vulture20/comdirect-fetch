@@ -6,11 +6,19 @@ using ComdirectFetch.Worker.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// KONZEPT.md Abschnitt 10 A: Docker-Compose-Secrets (Dateien unter /run/secrets/, z. B.
+// "Comdirect__ClientId") als zusätzliche, nach den Env-Vars geladene Konfigurationsquelle -
+// überschreibt gleichnamige Env-Var-Werte, fehlt das Verzeichnis/sind keine Secrets gemountet,
+// ist das ein no-op (optional: true).
+builder.Configuration.AddKeyPerFile("/run/secrets", optional: true);
+
 builder.Services.Configure<ComdirectApiOptions>(builder.Configuration.GetSection(ComdirectApiOptions.SectionName));
 builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.SectionName));
 builder.Services.Configure<FetchOptions>(builder.Configuration.GetSection(FetchOptions.SectionName));
 
 builder.Services.AddSingleton<ComdirectRequestContext>();
+builder.Services.AddSingleton<CredentialProvider>();
+builder.Services.AddSingleton<ICredentialProvider>(sp => sp.GetRequiredService<CredentialProvider>());
 builder.Services.AddHttpClient<ComdirectAuthClient>();
 builder.Services.AddHttpClient<ComdirectBankingClient>();
 builder.Services.AddHttpClient<ComdirectBrokerageClient>();
@@ -32,6 +40,7 @@ builder.Services.AddSingleton<CategorizationRuleRepository>();
 builder.Services.AddSingleton<SyncLogRepository>();
 builder.Services.AddSingleton<DiagnosticsRepository>();
 builder.Services.AddSingleton<AuthTokenRepository>();
+builder.Services.AddSingleton<CredentialRepository>();
 builder.Services.AddSingleton<CategorizationService>();
 
 builder.Services.AddHostedService<TokenRefreshBackgroundService>();
@@ -120,6 +129,32 @@ app.MapPost("/debug/recategorize", async (CategorizationService categorization, 
     });
 });
 
+// KONZEPT.md Abschnitt 10 B: Bootstrap-Schritt für Zugangsnummer/PIN - verschlüsselt sie mit
+// dem dedizierten, dateibasierten Schlüssel (Comdirect__CredentialKeyFilePath) und legt sie in
+// credential_store ab. Danach können Comdirect__Username/Comdirect__Password aus .env entfernt
+// werden. Keine zusätzliche Auth (gleiche Vertrauensebene wie /auth/*, /debug/* - Dienst ist
+// nur host-lokal auf diesem Port erreichbar). Schlägt fehl, wenn keine Schlüsseldatei
+// konfiguriert ist (siehe CredentialProvider.SetCredentialsAsync).
+app.MapPost("/admin/credentials", async (CredentialProvider credentials, SetCredentialsRequest body, CancellationToken ct) =>
+{
+    if (string.IsNullOrEmpty(body.Username) || string.IsNullOrEmpty(body.Password))
+    {
+        return Results.BadRequest(new { Message = "username und password sind erforderlich." });
+    }
+
+    try
+    {
+        await credentials.SetCredentialsAsync(body.Username, body.Password, ct);
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { Message = ex.Message });
+    }
+
+    return Results.Ok(new { Message = "Zugangsnummer/PIN verschlüsselt gespeichert. .env kann jetzt bereinigt werden." });
+});
+
 app.Run();
 
 internal sealed record TanConfirmRequest(string? TanCode);
+internal sealed record SetCredentialsRequest(string? Username, string? Password);

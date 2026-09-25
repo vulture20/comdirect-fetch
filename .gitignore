@@ -6,6 +6,9 @@ obj/
 # Echte Zugangsdaten dürfen nicht ins Repository (KONZEPT.md Abschnitt 8)
 .env
 
+# Docker-Compose-Secret-Dateien (KONZEPT.md Abschnitt 10 A) - echte Client-ID/Client-Secret
+secrets/
+
 # IDE
 .vs/
 .vscode/

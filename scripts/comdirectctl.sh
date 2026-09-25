@@ -33,6 +33,7 @@ Verwendung:
   ${SCRIPT_NAME} auth confirm [TAN_CODE]
   ${SCRIPT_NAME} fetch-now
   ${SCRIPT_NAME} recategorize
+  ${SCRIPT_NAME} set-credentials
   ${SCRIPT_NAME} help
 
 Befehle:
@@ -52,6 +53,12 @@ Befehle:
                   neu einordnen (POST /debug/recategorize), z. B. nach einer Erweiterung
                   oder Korrektur der Kategorisierungsregeln. Berührt keine Session/TAN,
                   gefahrlos wiederholbar; manuelle Zuordnungen bleiben unverändert.
+  set-credentials Bootstrap-Schritt (KONZEPT.md Abschnitt 10 B): fragt Zugangsnummer/PIN
+                  interaktiv ab (PIN nicht auf dem Bildschirm sichtbar, nicht als
+                  Kommandozeilenargument) und legt sie verschlüsselt in der DB ab
+                  (POST /admin/credentials). Erfordert eine konfigurierte Schlüsseldatei
+                  (Comdirect__CredentialKeyFilePath) auf dem Dienst. Danach können
+                  Comdirect__Username/Comdirect__Password aus .env entfernt werden.
   help            Diese Hilfe anzeigen.
 
 Umgebungsvariable COMDIRECT_FETCH_URL überschreibt die Basis-URL
@@ -193,6 +200,41 @@ cmd_recategorize() {
   echo "$HTTP_BODY" | jq -r '.message'
 }
 
+# Bootstrap-Schritt für Zugangsnummer/PIN (KONZEPT.md Abschnitt 10 B). PIN bewusst per "read -s"
+# abgefragt statt als Argument, damit sie weder im Terminal sichtbar noch in der Shell-History/
+# Prozessliste (ps) landet.
+cmd_set_credentials() {
+  echo "Setzt Zugangsnummer/PIN verschlüsselt in der DB ab (KONZEPT.md Abschnitt 10 B)."
+  echo "Voraussetzung: Comdirect__CredentialKeyFilePath zeigt auf dem Dienst auf eine vorhandene Schlüsseldatei."
+  echo
+
+  local username password password_confirm payload
+  read -r -p "Zugangsnummer: " username
+  read -r -s -p "PIN: " password
+  echo
+  read -r -s -p "PIN (Wiederholung): " password_confirm
+  echo
+
+  if [[ -z "$username" || -z "$password" ]]; then
+    echo "Fehler: Zugangsnummer und PIN dürfen nicht leer sein." >&2
+    exit 64
+  fi
+  if [[ "$password" != "$password_confirm" ]]; then
+    echo "Fehler: PIN-Eingaben stimmen nicht überein." >&2
+    exit 64
+  fi
+
+  payload="$(jq -n --arg u "$username" --arg p "$password" '{username: $u, password: $p}')"
+  http_request POST /admin/credentials "$payload"
+  if [[ "$HTTP_CODE" != "200" ]]; then
+    echo "Fehler (HTTP ${HTTP_CODE}): ${HTTP_BODY}" >&2
+    exit 1
+  fi
+  echo "$HTTP_BODY" | jq -r '.message'
+  echo
+  echo "-> Jetzt Comdirect__Username/Comdirect__Password aus .env entfernen (siehe README.md)."
+}
+
 require_deps
 
 case "${1:-help}" in
@@ -211,6 +253,7 @@ case "${1:-help}" in
     ;;
   fetch-now) cmd_fetch_now ;;
   recategorize) cmd_recategorize ;;
+  set-credentials) cmd_set_credentials ;;
   help|-h|--help) usage ;;
   *) echo "Unbekannter Befehl: ${1}. Siehe '${SCRIPT_NAME} help'." >&2; exit 64 ;;
 esac

@@ -16,6 +16,41 @@ steht in [`docs/konzept.md`](docs/konzept.md).
 Alle Einstellungen werden über Umgebungsvariablen übergeben, siehe [`.env.example`](.env.example).
 Für lokale Docker-Läufe: `.env.example` nach `.env` kopieren und Werte eintragen.
 
+## Sichere Ablage der comdirect-Zugangsdaten
+
+Seit 0.12.0 (`docs/konzept.md` Abschnitt 10) werden Client-ID/Client-Secret und Zugangsnummer/PIN
+nicht mehr nur als Klartext in `.env` gehalten – siehe dort für das vollständige Konzept
+(Bedrohungsmodell, Begründung). Einmaliges Setup vor dem ersten `docker compose up`:
+
+```bash
+# 1. Client-ID/Client-Secret als Docker-Compose-Secret-Dateien anlegen (ersetzt die
+#    entsprechenden Zeilen in .env; secrets/ ist gitignored):
+mkdir -p secrets
+printf '%s' 'DEINE_CLIENT_ID'     > secrets/Comdirect__ClientId
+printf '%s' 'DEIN_CLIENT_SECRET'  > secrets/Comdirect__ClientSecret
+chmod 600 secrets/Comdirect__ClientId secrets/Comdirect__ClientSecret
+
+# 2. Dedizierten Schlüssel für die Zugangsnummer/PIN-Verschlüsselung erzeugen - bewusst
+#    außerhalb dieses Projektverzeichnisses, damit er nicht dieselbe Exposition wie .env hat:
+sudo mkdir -p /etc/comdirect-fetch
+openssl rand 32 | sudo tee /etc/comdirect-fetch/credential.key > /dev/null
+sudo chmod 400 /etc/comdirect-fetch/credential.key
+```
+
+Danach Container (neu) starten und Zugangsnummer/PIN einmalig per Bootstrap-Schritt verschlüsselt
+ablegen:
+
+```bash
+./scripts/comdirectctl.sh set-credentials
+# fragt Zugangsnummer und PIN interaktiv ab (PIN nicht sichtbar, landet nicht in der
+# Shell-History) und legt sie verschlüsselt in credential_store ab
+```
+
+Nach erfolgreicher Bestätigung `Comdirect__Username`/`Comdirect__Password` aus `.env` entfernen
+– der Dienst liest sie danach ausschließlich verschlüsselt aus der DB. Ohne diesen Bootstrap-
+Schritt (bzw. ohne die Schlüsseldatei) bleibt das bisherige Verhalten unverändert: Zugangsnummer/
+PIN werden dann weiterhin aus `.env` gelesen, komplett opt-in.
+
 ## Bauen und testen
 
 ```bash

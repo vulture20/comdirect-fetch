@@ -78,6 +78,13 @@ Alle Einstellungen werden dem Container ausschließlich über Umgebungsvariablen
 
 Eine vollständige, exakte Liste der Variablen wird sinnvollerweise erst in der technischen Umsetzung festgelegt; die obige Gliederung zeigt die Kategorien, die abgedeckt werden müssen.
 
+**Hinweis zur sicheren Ablage der comdirect-Zugangsdaten**: Client-ID/Client-Secret sowie
+Zugangsnummer/PIN lagen ursprünglich als Klartext in einer lokalen `.env`-Datei und wurden
+unverändert als Container-Umgebungsvariablen übergeben. Der in Abschnitt 10 beschriebene, nach
+Sensibilität der Werte unterschiedlich starke Schutz ist seit `CHANGELOG.md` 0.12.0 umgesetzt:
+Client-ID/Client-Secret über Docker-Compose-Secrets, Zugangsnummer/PIN über einen
+Bootstrap-und-Wipe-Flow mit dediziertem Schlüssel.
+
 ## 5. Datenmodell (Vorschlag)
 
 Grundprinzip: Es gibt drei unterschiedliche Arten von Daten, die unterschiedlich behandelt werden:
@@ -215,3 +222,105 @@ Diese Pflege übernimmt Claude Code während der Entwicklung selbstständig als 
 - **Auswertung Phase 3 „Cashflow-Analyse“ + „Kostenübersicht“** (Abschnitt 6): als Grafana-Dashboard umgesetzt (`grafana/dashboards/cashflow.json`, siehe `CHANGELOG.md` 0.9.0) und mit echten Daten verifiziert (7 Monate). Erledigt. Aussagekraft hängt an der Kategorisierungsqualität (Abschnitt 6/9) – ein Großteil des Ausgabenvolumens liegt aktuell noch unter „Sonstige Ausgabe“, weitere Regeln werden iterativ ergänzt.
 - **Auswertung Phase 4 „Depot-Performance”** (Abschnitt 6): in vereinfachter Form umgesetzt (`grafana/dashboards/depot-performance.json`, siehe `CHANGELOG.md` 0.10.0) – unrealisierter Gewinn/Verlust aus `total_value − acquisition_value`, mit echten Daten verifiziert. Bewusst NICHT umgesetzt: die im Konzept ursprünglich vorgesehene Bereinigung um externe Ein-/Auszahlungen. Dafür fehlt sowohl eine Depot↔Verrechnungskonto-Verknüpfung im Datenmodell als auch echte Wertpapier-Kauf/Verkauf-Umsätze zum Verifizieren (Kategorie „Ordergebühren” hat bislang 0 Treffer in den Live-Daten) – als Folge-Issue vorgemerkt, statt ungetestet zu raten.
 - **Auth-Status über Neustarts persistieren** (Abschnitt 3): umgesetzt (siehe `CHANGELOG.md` 0.11.0, `db/migrations/0006_auth_token_store.sql`). Der Session-Token wird bei optional gesetztem `Comdirect__TokenEncryptionKeyBase64` AES-256-GCM-verschlüsselt in der DB abgelegt und beim Start automatisch wiederhergestellt (inkl. Refresh zur Gültigkeitsprüfung) – ein Neustart innerhalb der Refresh-Token-Gültigkeit braucht dann keine neue TAN-Freigabe mehr. Ohne gesetzten Schlüssel bleibt das Verhalten wie zuvor (In-Memory-only). Live verifiziert (Neustart nach echter TAN-Freigabe, Session danach direkt wieder `Authentifiziert`). Erledigt.
+- **Sichere Ablage der comdirect-Zugangsdaten** (Abschnitt 4/10): umgesetzt (siehe
+  `CHANGELOG.md` 0.12.0) – zweistufiger Schutz, Docker-Secrets für Client-ID/Secret,
+  Bootstrap-und-Wipe-Flow mit dediziertem, dateibasiertem Schlüssel für Zugangsnummer/PIN.
+  Bewusst zu unterscheiden vom bereits umgesetzten Punkt oben (der betrifft den Session-Token,
+  nicht diese vier Werte). Live verifiziert. Erledigt.
+
+## 10. Sichere Ablage der comdirect-Zugangsdaten (umgesetzt in 0.12.0)
+
+**Ausgangslage**: Client-ID, Client-Secret, Zugangsnummer und PIN lagen ursprünglich ausschließlich als
+Klartext in einer lokalen `.env`-Datei, wurden per `env_file:` unverändert als
+Container-Umgebungsvariablen an den Dienst übergeben und binden über die Standard-Konfiguration in
+`ComdirectApiOptions`. Das ist bewusst von der bereits umgesetzten Session-Token-Persistierung
+(Abschnitt 3/9, `CHANGELOG.md` 0.11.0) zu unterscheiden: dort wird der Access-/Refresh-Token
+verschlüsselt in der DB abgelegt, nicht diese vier Zugangsdaten.
+
+**Bedrohungsmodell**: primär andere Prozesse/Nutzer auf dem geteilten Homelab-Host, die über
+`docker inspect`, `docker exec … env`, `/proc/<pid>/environ` oder versehentliche Env-Var-Dumps in
+Logs/Monitoring an die Werte gelangen könnten – nicht in erster Linie Zugriff auf die Datenbank
+oder physischer Diebstahl der Festplatte.
+
+**Differenzierung**: Zugangsnummer/PIN (der eigentliche Bank-Login) werden als deutlich sensibler
+eingestuft als Client-ID/Client-Secret (reine API-Ebene) – das deckt sich mit dem bisherigen Umgang
+in diesem Projekt (Client-ID/Secret wurden einmal direkt im Chat geteilt, die PIN nie). Beide Wert-
+Paare bekommen deshalb bewusst unterschiedlich starken Schutz statt eines einheitlichen Mechanismus.
+
+### A) Client-ID/Client-Secret: Docker-Compose-Secrets statt Umgebungsvariable
+
+Statt über `env_file`/`environment:` werden Client-ID und Client-Secret als dateibasierte
+Docker-Compose-Secrets bereitgestellt: zwei Dateien außerhalb von Git (`secrets/Comdirect__ClientId`,
+`secrets/Comdirect__ClientSecret`, Dateirechte `600`, `secrets/` gitignored), über einen
+`secrets:`-Block in `docker/docker-compose.yml` referenziert und dadurch als Dateien unter
+`/run/secrets/…` im Container verfügbar statt als Umgebungsvariable. Auf Code-Seite liest der im
+ASP.NET-Core-Shared-Framework bereits enthaltene `Microsoft.Extensions.Configuration.KeyPerFile`-
+Provider (`builder.Configuration.AddKeyPerFile("/run/secrets", optional: true)` in `Program.cs`)
+die Secret-Dateien ein und bindet sie automatisch in dieselben Konfigurationsfelder wie zuvor die
+Umgebungsvariablen (Dateiname = Konfigurationsschlüssel, `__` als Trenner) – kein Eigenbau nötig.
+`.env` bleibt als Fallback für lokale Entwicklung ohne Docker Compose bestehen.
+
+Das schließt die Exposition dieser zwei Werte über `docker inspect`, `docker exec … env`,
+`/proc/<pid>/environ` und versehentliche Env-Var-Dumps in Logs. Es schließt **nicht**, dass die
+Werte weiterhin als Klartext-Dateien auf der Host-Platte liegen – wer direkten Dateizugriff auf den
+Host hat, sieht sie trotzdem. Das ist für diese zwei, laut obiger Differenzierung weniger sensiblen
+Werte bewusst akzeptiert; sie werden ohnehin bei jedem Token-Refresh (alle ~8 Minuten) im Klartext
+im Prozessspeicher gebraucht. Betriebsaufwand: einmalige Umstellung, danach unverändert „Datei
+bearbeiten, Container neu starten” für eine Rotation.
+
+### B) Zugangsnummer/PIN: Bootstrap-und-Wipe-Flow mit dediziertem Schlüssel
+
+Für die eigentliche Bank-Login (Zugangsnummer/PIN) gilt ein stärkerer Mechanismus: Klartext
+existiert nur während eines einmaligen, expliziten Setup-Schritts auf der Platte, danach liegt
+ausschließlich ein AES-256-GCM-verschlüsselter Blob in der Datenbank.
+
+**Bootstrap-Schritt**: `scripts/comdirectctl.sh set-credentials` fragt Zugangsnummer und PIN
+interaktiv ab (PIN per `read -s`, nie als Kommandozeilenargument, landet also nicht in
+Shell-History/Prozessliste) und ruft `POST /admin/credentials` auf – auf derselben
+Vertrauensebene wie die bestehenden `/debug/*`-Routen (keine zusätzliche Authentifizierung, der
+Dienst ist nur innerhalb des Hosts auf Port 8750 erreichbar). `ComdirectFetch.Worker.Services.
+CredentialProvider.SetCredentialsAsync` verschlüsselt Zugangsnummer/PIN mit der bestehenden
+`ComdirectFetch.Domain.SecretEncryption` (AES-256-GCM), aber einem **neuen, dedizierten**
+Schlüssel statt des Session-Token-Schlüssels, und legt das Ergebnis in der neuen Tabelle
+`credential_store` ab (`db/migrations/0007_credential_store.sql`, `ComdirectFetch.Data.
+CredentialRepository`, analog zu `auth_token_store`/`AuthTokenRepository`). Nach bestätigtem
+Schreiben (Round-Trip-Entschlüsselung zur Verifikation, damit kein Zugriff stillschweigend
+verloren geht) werden Zugangsnummer/PIN manuell aus der `.env`-Datei entfernt – Klartext
+existiert danach nur noch für die kurze Dauer des Bootstrap-Aufrufs auf der Platte.
+`ComdirectFetch.Api.ICredentialProvider` entkoppelt `ComdirectAuthClient` von
+`ComdirectApiOptions.Username/Password`: die Werte werden jetzt zur Laufzeit (bei jedem Login,
+nicht beim DI-Container-Bau) aufgelöst, mit `CredentialProvider` als produktiver Implementierung
+und transparentem Fallback auf `ComdirectApiOptions`, falls kein Bootstrap durchgeführt wurde.
+
+**Schlüssel-Aufbewahrung** (löst das Henne-Ei-Problem: der Schlüssel darf nicht wieder in `.env`
+landen, sonst bringt das Entfernen der Zugangsdaten aus `.env` nichts): eine separate, eng
+berechtigte Schlüsseldatei außerhalb von `.env` und außerhalb des Compose-Projektverzeichnisses auf
+dem Host (Dateirechte `400`), per Docker-Bind-Mount (read-only, `/etc/comdirect-fetch/credential.key`
+→ `/run/secrets/credential_key`) in den Container gereicht (`Comdirect__CredentialKeyFilePath`,
+Standardwert passt zu diesem Mount-Ziel). Fehlt diese Datei, bleibt der ganze Mechanismus inaktiv
+und der Dienst verhält sich wie zuvor (Zugangsnummer/PIN weiterhin aus `.env`/Konfiguration
+gelesen) – kein Zwang zur Migration bestehender Deployments, analog zum bereits opt-in
+gestalteten `Comdirect__TokenEncryptionKeyBase64`.
+Der tatsächliche Sicherheitsgewinn hängt davon ab, dass diese Schlüsseldatei auf dem Host wirklich
+enger berechtigt ist als `.env` – das ist eine Voraussetzung, keine automatische Eigenschaft.
+Explizit geprüfte und abgelehnte Alternativen für die Schlüssel-Aufbewahrung: eine bei jedem Start
+interaktiv einzugebende Passphrase (würde den unbeaufsichtigten Neustart des Diensts,
+`restart: unless-stopped`, brechen), ein OS-Keyring/`systemd-creds` (neue Technologie/Lernaufwand,
+da dieses Projekt bisher rein über `docker compose` ohne systemd-Units läuft) sowie ein dedizierter
+Linux-User, der exklusiv die Schlüsseldatei besitzt (nur so gut wie die ohnehin schon vorhandene
+Nutzer-/Gruppendisziplin auf dem geteilten Host, kein zusätzlicher Gewinn gegenüber der einfachen
+Schlüsseldatei).
+
+### Ergänzend, unabhängig von A/B (günstig, empfohlen, aber nicht Teil dieses Konzepts als Code)
+
+- `.env`-Dateirechte auf dem Host verschärfen (`chmod 600`).
+- Einmalig prüfen, wer auf dem Host Mitglied der `docker`-Gruppe ist – Docker-Gruppenmitgliedschaft
+  ist praktisch root-äquivalent und damit der eigentlich maßgebliche Zugriffs-Hebel auf einem
+  geteilten Host, unabhängig davon, wie die Zugangsdaten selbst abgelegt werden.
+
+### Was dieses Konzept explizit nicht löst
+
+Physischer Zugriff auf den Host ohne Festplattenverschlüsselung, jemand mit Root-Rechten auf dem
+Host, sowie jemand mit direktem Lesezugriff auf die neue Schlüsseldatei selbst – all das bleibt
+außerhalb des hier beschriebenen Schutzes und müsste, falls relevant, über Host-seitige Maßnahmen
+(z. B. LUKS) abgedeckt werden.

@@ -4,6 +4,45 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.12.0 – Sichere Ablage der comdirect-Zugangsdaten (docs/konzept.md Abschnitt 10)
+
+Client-ID, Client-Secret, Zugangsnummer und PIN lagen bisher ausschließlich als Klartext in
+`.env` und wurden unverändert als Container-Umgebungsvariablen übergeben – angreifbar über
+`docker inspect`, `docker exec … env`, `/proc/<pid>/environ` oder versehentliche Env-Var-Dumps
+in Logs. Umgesetzt nach dem in Abschnitt 10 dokumentierten Konzept, mit unterschiedlich starkem
+Schutz je nach Sensibilität:
+
+- **Client-ID/Client-Secret**: kommen jetzt primär über Docker-Compose-Secrets
+  (`docker/docker-compose.yml`, Dateien unter `secrets/`, gitignored) statt über `env_file` –
+  gelesen über den Standard-`Microsoft.Extensions.Configuration.KeyPerFile`-Provider
+  (`Program.cs`, `/run/secrets`), kein Eigenbau. `.env` bleibt als Fallback für lokale
+  Entwicklung ohne Docker Compose bestehen.
+- **Zugangsnummer/PIN**: neuer Bootstrap-und-Wipe-Flow. `POST /admin/credentials` (bzw.
+  `comdirectctl.sh set-credentials`, PIN interaktiv per `read -s` abgefragt, nie als
+  Kommandozeilenargument) verschlüsselt sie AES-256-GCM (wiederverwendete
+  `ComdirectFetch.Domain.SecretEncryption`) mit einem **neuen, dedizierten** Schlüssel – bewusst
+  nicht `Comdirect__TokenEncryptionKeyBase64` – und legt sie in der neuen Tabelle
+  `credential_store` ab (`db/migrations/0007_credential_store.sql`, neues
+  `ComdirectFetch.Data.CredentialRepository`, analog zu `AuthTokenRepository`). Der Schlüssel
+  selbst liegt in einer separaten, eng berechtigten Datei außerhalb von `.env` und außerhalb des
+  Compose-Projektverzeichnisses (`Comdirect__CredentialKeyFilePath`, standardmäßig
+  `/run/secrets/credential_key`, per Bind-Mount statt Compose-Secret bereitgestellt) – damit der
+  Master-Schlüssel nicht dieselbe Exposition wie das `.env`-Klartext-Problem hat, das er gerade
+  lösen soll. Nach erfolgreichem Bootstrap (mit Round-Trip-Verifikation, damit kein Zugriff
+  stillschweigend verloren geht) können `Comdirect__Username`/`Comdirect__Password` aus `.env`
+  entfernt werden. Neues `ComdirectFetch.Worker.Services.CredentialProvider` liefert die Werte
+  zur Laufzeit statt beim DI-Container-Bau (über die neue `ComdirectFetch.Api.ICredentialProvider`-
+  Abstraktion, die `ComdirectAuthClient` jetzt statt eines direkten `ComdirectApiOptions`-Zugriffs
+  nutzt) und fällt ohne Bootstrap/ohne konfigurierten Schlüssel transparent auf `.env` zurück –
+  komplett opt-in, keine erzwungene Migration bestehender Deployments.
+
+Bewusst zu unterscheiden von der bereits umgesetzten Session-Token-Persistierung (0.11.0,
+Issue #5): dort geht es um den Access-/Refresh-Token, hier um die vier Login-Zugangsdaten
+selbst. Live verifiziert: Client-ID/Client-Secret über Docker-Secret-Dateien geladen,
+Zugangsnummer/PIN per Bootstrap in `credential_store` verschlüsselt, aus `.env` entfernt,
+Container neu gestartet, anschließender `/auth/start`-Lauf mit echter TAN-Freigabe erfolgreich
+ohne dass Zugangsnummer/PIN noch in `.env` standen.
+
 ## 0.11.0 – Auth-Status übersteht jetzt einen Neustart (Issue #5)
 
 `ComdirectAuthCoordinator` hielt den Session-Token bisher ausschließlich im Prozessspeicher –

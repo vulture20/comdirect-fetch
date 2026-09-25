@@ -2,6 +2,18 @@
 # (KONZEPT.md Abschnitt 2). Grafana ebenso: Es lief bereits eine eigene Instanz auf dem
 # ursprünglichen Zielhost, daher werden Datenquelle + Dashboards dort per Grafana-API
 # eingerichtet statt über einen eigenen Grafana-Container hier (siehe README.md).
+#
+# KONZEPT.md Abschnitt 10 A: Client-ID/Client-Secret werden als Docker-Compose-Secrets (Dateien
+# statt Env-Var) bereitgestellt, um sie aus docker inspect/exec/-Umgebungsvariablen-Dumps
+# herauszuhalten. Vor dem ersten "docker compose up" müssen ../secrets/Comdirect__ClientId und
+# ../secrets/Comdirect__ClientSecret existieren (siehe README.md/.env.example) - Dateirechte 600,
+# das Verzeichnis ist gitignored.
+
+secrets:
+  Comdirect__ClientId:
+    file: ../secrets/Comdirect__ClientId
+  Comdirect__ClientSecret:
+    file: ../secrets/Comdirect__ClientSecret
 
 services:
   fetch:
@@ -10,6 +22,15 @@ services:
       dockerfile: docker/Dockerfile
     env_file:
       - ../.env
+    secrets:
+      - Comdirect__ClientId
+      - Comdirect__ClientSecret
+    volumes:
+      # KONZEPT.md Abschnitt 10 B: dedizierter, dateibasierter Schlüssel zur Verschlüsselung von
+      # Zugangsnummer/PIN in credential_store - bewusst außerhalb von .env und außerhalb dieses
+      # Projektverzeichnisses (chmod 400 auf dem Host). Fehlt die Datei, bleibt der
+      # Bootstrap-Mechanismus inaktiv (siehe CredentialProvider), kein Zwang zur Migration.
+      - /etc/comdirect-fetch/credential.key:/run/secrets/credential_key:ro
     restart: unless-stopped
     ports:
       - "8750:8080"
