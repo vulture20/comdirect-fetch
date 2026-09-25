@@ -227,6 +227,12 @@ Diese Pflege übernimmt Claude Code während der Entwicklung selbstständig als 
   Bootstrap-und-Wipe-Flow mit dediziertem, dateibasiertem Schlüssel für Zugangsnummer/PIN.
   Bewusst zu unterscheiden vom bereits umgesetzten Punkt oben (der betrifft den Session-Token,
   nicht diese vier Werte). Live verifiziert. Erledigt.
+- **Konsolidierungs- und Aufräumprozess für Zeitreihen-Daten** (Abschnitt 11): Konzept steht
+  (Abschnitt 11) – Salden/Depot-Snapshots werden nach einer konfigurierbaren Rohdaten-Frist auf
+  einen Wert/Tag konsolidiert, `sync_log` nach einer separaten Frist gelöscht, Kontoumsätze
+  (`transactions`) bewusst nie angefasst. Beides komplett opt-in (nichts passiert ohne explizit
+  gesetzte Zeiträume), automatisch per neuem Hintergrunddienst plus manuell auslösbar. Noch nicht
+  umgesetzt – Umsetzung folgt auf expliziten Zuruf.
 
 ## 10. Sichere Ablage der comdirect-Zugangsdaten (umgesetzt in 0.12.0)
 
@@ -324,3 +330,76 @@ Physischer Zugriff auf den Host ohne Festplattenverschlüsselung, jemand mit Roo
 Host, sowie jemand mit direktem Lesezugriff auf die neue Schlüsseldatei selbst – all das bleibt
 außerhalb des hier beschriebenen Schutzes und müsste, falls relevant, über Host-seitige Maßnahmen
 (z. B. LUKS) abgedeckt werden.
+
+## 11. Konsolidierungs- und Aufräumprozess für Zeitreihen-Daten (Konzept, noch nicht umgesetzt)
+
+**Ausgangslage**: `account_balances` und `portfolio_snapshots` (+ `portfolio_positions`) wachsen
+mit jedem Abrufintervall unbegrenzt weiter (Standard-Intervalle: Salden alle 15 Minuten, Depot
+stündlich – bei 3 Konten macht das rund 288 Salden-Zeilen/Tag, plus je nach Positionsanzahl grob
+500–700 Positions-Zeilen/Tag). `sync_log` wächst mit jedem Abrufversuch aller Datenarten ähnlich
+schnell. Auf Dauer (Monate/Jahre) summiert sich das zu erheblichem, größtenteils redundantem
+Datenvolumen, ohne dass die volle Auflösung für Langzeit-Trends in Grafana tatsächlich gebraucht
+wird. Es gibt aktuell keinerlei Aufräum-Mechanismus – alles wird für immer aufbewahrt.
+
+**Bewusst außerhalb des Umfangs**: `transactions` (das Finanz-Ledger – einzelne, unveränderliche
+Buchungen, u. U. steuerlich relevant; "konsolidieren" würde hier echte Daten verfälschen oder
+verlieren) sowie alle übrigen Tabellen (`accounts`, `portfolios`, `categories`,
+`categorization_rules`, `auth_token_store`, `credential_store` – keine wachsenden Zeitreihen).
+
+### Umfang und Konsolidierungsform
+
+- **`account_balances` und `portfolio_snapshots`/`portfolio_positions`**: zweistufige,
+  einstufig-konsolidierende Aufbewahrung. Nach einer konfigurierbaren Rohdaten-Frist werden pro
+  Tag alle Zeilen bis auf eine gelöscht – behalten wird die zeitlich letzte Zeile des Tages (je
+  `account_id`/`portfolio_id`, Tagesgrenze in UTC, konsistent mit `recorded_at`, das im Code
+  bereits durchgängig `DateTimeOffset.UtcNow` ist). Für `portfolio_positions` bedeutet das: beim
+  Löschen eines nicht mehr benötigten Snapshots werden dessen Positionszeilen im selben Schritt
+  mitgelöscht (Fremdschlüssel-Constraint), die Positionen des behaltenen Tages-Snapshots bleiben
+  unverändert erhalten. Optional – nur wenn zusätzlich konfiguriert – werden konsolidierte
+  (1 Wert/Tag) Zeilen nach einer weiteren, separaten Frist vollständig gelöscht.
+- **`sync_log`**: einfachere, einstufige Politik ohne Konsolidierung (ein Betriebs-/Diagnose-Log
+  lässt sich nicht sinnvoll "verdichten") – Zeilen werden nach einer eigenen, separat
+  konfigurierbaren Frist direkt gelöscht.
+- **`transactions`**: unangetastet, siehe oben.
+
+### Konfiguration – komplett opt-in
+
+Analog zu `Comdirect__TokenEncryptionKeyBase64`/`Comdirect__CredentialKeyFilePath` (Abschnitt 9/10):
+ohne explizit gesetzte Zeiträume passiert nichts, das heutige Verhalten (alles wird für immer
+aufbewahrt) bleibt für bestehende Deployments unverändert. Drei unabhängige, optionale Zeiträume
+(Vorschlag, Name in der technischen Umsetzung final festzulegen):
+
+- `Retention__RawDataRetentionDays` – Rohdaten-Frist für `account_balances`/`portfolio_snapshots`.
+  Nicht gesetzt: keine Konsolidierung, aktuelles Verhalten bleibt bestehen.
+- `Retention__ConsolidatedDataRetentionDays` – zusätzliche Frist, nach der konsolidierte
+  (1 Wert/Tag) Zeilen komplett gelöscht werden. Nur wirksam, wenn `RawDataRetentionDays` ebenfalls
+  gesetzt ist. Nicht gesetzt: konsolidierte Daten bleiben unbegrenzt erhalten.
+- `Retention__SyncLogRetentionDays` – Frist für das Löschen alter `sync_log`-Zeilen, unabhängig
+  von den beiden anderen Werten.
+
+### Auslösung
+
+Neuer `BackgroundService` (analog zu `BalanceFetchService`/`PortfolioFetchService`/
+`TransactionFetchService`), läuft automatisch in einem eigenen, seltenen Intervall (Vorschlag:
+täglich, `Retention__IntervalSeconds`). Wie die bestehenden Fetch-Dienste zusätzlich als
+konkreter Singleton registriert, damit ein manueller Anstoß ohne Warten auf das Intervall möglich
+ist – neuer Endpoint (Vorschlag: `POST /debug/consolidate`, analog zu `/debug/recategorize`) plus
+neuer `comdirectctl.sh`-Unterbefehl. Berührt weder Session noch TAN.
+
+### Sicherheit/Nachvollziehbarkeit
+
+- Jeder Lauf wird wie die bestehenden Abrufe in `sync_log` protokolliert (neuer `data_kind`-Wert,
+  z. B. `Konsolidierung` – erfordert eine neue, append-only Migration zur Erweiterung des
+  bestehenden ENUM), inklusive Anzahl konsolidierter/gelöschter Zeilen – damit über
+  `GET /debug/summary`/`comdirectctl.sh status` nachvollziehbar, ohne direkten DB-Zugriff.
+- Konsolidierung und Löschung laufen je Tabelle/Tagesbatch in einer Transaktion, um keine
+  inkonsistenten Zwischenzustände zu hinterlassen. Positionszeilen werden vor ihrem
+  Snapshot-Datensatz gelöscht (Fremdschlüssel-Reihenfolge).
+
+### Auswirkung auf Grafana
+
+Die bestehenden Dashboards (`salden.json`, `depot.json`) fragen `account_balances`/
+`portfolio_snapshots` direkt ab; nach einer Konsolidierung zeigen ältere Zeiträume automatisch nur
+noch die verdichtete Auflösung (1 Punkt/Tag statt alle 15/60 Minuten) – ohne Änderung an den
+Dashboard-Queries selbst, da dieselben Tabellen/Spalten weiterverwendet werden. Erwartetes,
+gewolltes Verhalten dieses Features, keine Nebenwirkung, die extra behandelt werden müsste.
