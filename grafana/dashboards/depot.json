@@ -1,0 +1,112 @@
+{
+  "uid": "comdirect-depot",
+  "title": "comdirect-fetch: Depot",
+  "description": "Asset-Allokation und Einzelpositionsentwicklung – KONZEPT.md Abschnitt 6, Phase 2.",
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "browser",
+  "time": { "from": "now-90d", "to": "now" },
+  "refresh": "5m",
+  "tags": ["comdirect-fetch"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "piechart",
+      "title": "Asset-Allokation (aktuellste Depotübersicht)",
+      "description": "Verteilung des Depotwerts auf Einzelpositionen zum letzten bekannten Stand. Gruppierung nach Anlageklasse ist ein möglicher späterer Ausbau (KONZEPT.md Abschnitt 6, Phase 2).",
+      "gridPos": { "h": 12, "w": 10, "x": 0, "y": 0 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyEUR" },
+        "overrides": []
+      },
+      "options": {
+        "displayLabels": ["name", "percent"],
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT pp.display_name AS `Position`, pp.market_value AS `Wert`\nFROM portfolio_positions pp\nWHERE pp.snapshot_id = (SELECT id FROM portfolio_snapshots ORDER BY recorded_at DESC LIMIT 1)\nORDER BY pp.market_value DESC"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Positionen aktuell (Tabelle)",
+      "gridPos": { "h": 12, "w": 14, "x": 10, "y": 0 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": "Wert|Anschaffungswert|Gewinn/Verlust" },
+            "properties": [{ "id": "unit", "value": "currencyEUR" }]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT pp.display_name AS `Position`, pp.isin AS `ISIN`, pp.quantity AS `Stück`, pp.market_value AS `Wert`, pp.acquisition_value AS `Anschaffungswert`, pp.profit_loss AS `Gewinn/Verlust`\nFROM portfolio_positions pp\nWHERE pp.snapshot_id = (SELECT id FROM portfolio_snapshots ORDER BY recorded_at DESC LIMIT 1)\nORDER BY pp.market_value DESC"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Einzelpositionsentwicklung – Kurswert je Position",
+      "description": "Marktwert je Position über die Zeit, aus portfolio_positions/portfolio_snapshots.",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "spanNulls": true }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ps.recorded_at AS time, pp.display_name AS metric, pp.market_value AS value\nFROM portfolio_positions pp\nJOIN portfolio_snapshots ps ON ps.id = pp.snapshot_id\nWHERE $__timeFilter(ps.recorded_at)\nORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Einzelpositionsentwicklung – Gewinn/Verlust je Position",
+      "description": "Absoluter Gewinn/Verlust zum Anschaffungswert je Position über die Zeit.",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 24 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "spanNulls": true }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ps.recorded_at AS time, pp.display_name AS metric, pp.profit_loss AS value\nFROM portfolio_positions pp\nJOIN portfolio_snapshots ps ON ps.id = pp.snapshot_id\nWHERE $__timeFilter(ps.recorded_at)\nORDER BY time"
+        }
+      ]
+    }
+  ]
+}
