@@ -14,7 +14,8 @@ public enum SyncDataKind
     TokenRefresh,
     Salden,
     Depotuebersicht,
-    Kontoumsaetze
+    Kontoumsaetze,
+    Konsolidierung
 }
 
 /// <summary>Ergebnis eines Abrufvorgangs, inkl. des TAN-Freigabe-Sonderfalls aus Abschnitt 3.</summary>
