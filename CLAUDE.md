@@ -13,13 +13,30 @@ architectural changes, it's the source of truth this code was built from.
 ## Commands
 
 ```bash
-dotnet build                                          # build the whole solution
-dotnet test                                            # run all tests
+dotnet build                                                # build the whole solution
+dotnet test                                                 # run all tests
 dotnet test --filter FullyQualifiedName~CategorizationLogicTests   # run a single test class
-docker compose -f docker/docker-compose.yml up --build # run fetch service (+ optional Grafana)
+docker compose -f docker/docker-compose.yml up fetch --build      # run just the fetch service
 ```
 
 There's no separate lint step; `dotnet build` surfaces nullable-reference and compiler warnings.
+
+## This host's environment — read before touching ports or Grafana
+
+This is a shared homelab host running many unrelated Docker containers (dozens, `docker ps`
+to see them) — not an isolated sandbox. Two things that already bit us once:
+
+- **Port 8080 is taken by something else on this host**; the fetch service runs on **8750**
+  instead (`docker/docker-compose.yml`). Always check `docker ps` / `ss -tlnp` for conflicts
+  before picking a host port for anything new here.
+- **There's already a Grafana instance on this host** (container name `grafana`, port 3000,
+  org "BugZone"). Don't start a second one from `docker/docker-compose.yml`'s optional
+  `grafana` service on this host — the comdirect-fetch dashboard was provisioned into the
+  *existing* instance via its HTTP API instead (datasource uid `comdirect-mariadb`, dashboard
+  uid `comdirect-salden`), using a Grafana service-account token the user provided (Admin
+  role — Editor role can't create datasources, that's a Grafana permission, not a bug).
+  `grafana/provisioning/` and the `grafana` compose service remain useful as the
+  self-contained path for a *fresh* environment without a pre-existing Grafana.
 
 ## Architecture
 
@@ -36,7 +53,7 @@ Five projects under `src/`, referencing each other in one direction only
   fetch balances/transactions/depots/positions. Endpoint paths and JSON field names were
   cross-checked against the official Swagger/Postman collection/PDF spec the user placed at
   `/opt/comdirect-fetch/docs`, **and then live-tested end-to-end with real credentials**
-  (see `CHANGELOG.md` 0.2.0–0.5.0): login/session/TAN, balances, portfolio overview, and
+  (see `CHANGELOG.md` 0.2.0–0.6.0): login/session/TAN, balances, portfolio overview, and
   paginated transactions all confirmed working. Several real API quirks the docs got wrong
   were found and fixed this way — e.g. `bookingDate` is a plain string in practice (not the
   documented nested `{"date": ...}` object; `FlexibleDateConverter` now accepts both), and
@@ -47,9 +64,14 @@ Five projects under `src/`, referencing each other in one direction only
   access) after three wrong TAN entries or five unredeemed TAN challenges — never call
   `POST /auth/start` in a retry loop; `ComdirectAuthCoordinator.StartAsync` already returns
   the existing pending challenge instead of requesting a new one, but that's not a full
-  guard against external retries. Also watch for HTTP 429 (rate limiting) under heavy
-  testing — `ComdirectBankingClient` and `TransactionFetchService` already pause briefly
-  between paginated requests/accounts, but this isn't a full retry/backoff strategy.
+  guard against external retries. **Rate limiting (HTTP 429)**, live-observed under heavy
+  testing, is handled by `ComdirectResilience` (Polly retry with exponential backoff +
+  jitter, respects `Retry-After`) — deliberately wired into the token endpoints and the
+  banking/brokerage data endpoints only, **not** into `RequestTanChallengeAsync` or
+  `ActivateSessionAsync`, since auto-retrying those could create an unwanted extra TAN
+  challenge or resubmit a TAN code. If you add a new comdirect call, decide consciously
+  whether it's "safe to retry" (token/data, idempotent) or "TAN-sensitive" (session
+  validate/activate) before wiring it through `ComdirectResilience.SendWithRetryAsync`.
 - **`ComdirectFetch.Data`** — Dapper + MySqlConnector repositories (one per table) and
   `DatabaseMigrator`, which runs the DbUp-based migration on startup against the scripts in
   `db/migrations/` (embedded into the assembly via the `.csproj`, not copied at runtime).
@@ -98,9 +120,8 @@ Do this as part of the change itself, not only when the user asks for it.
 
 - `ComdirectAuthCoordinator` state is in-memory only (no persistence across restarts) —
   a restart always needs a fresh TAN approval.
-- Rate limiting (HTTP 429) under heavy/rapid API usage is only mitigated with fixed short
-  delays, not real retry/backoff — untested at production data volumes (large depots, many
-  accounts, long transaction history).
+- Rate limiting has real retry/backoff now (see above) but is untested at production data
+  volumes (large depots, many accounts, long transaction history).
 - Error message bodies from comdirect can appear with garbled umlauts in logs (cosmetic,
   root cause — likely a charset/encoding mismatch somewhere in the logging pipeline, not
   necessarily in the app itself — not yet investigated).

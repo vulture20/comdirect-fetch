@@ -1,0 +1,17 @@
+# Grafana-Datenquelle für die comdirect-fetch-Datenbank (KONZEPT.md Abschnitt 2/6).
+# Wiederverwendet bewusst dieselben Zugangsdaten wie der Fetch-Dienst (.env) statt eines
+# dedizierten Read-Only-DB-Users – einfacher, auf Kosten unnötiger Schreibrechte für Grafana.
+apiVersion: 1
+
+datasources:
+  - name: comdirect-fetch MariaDB
+    uid: comdirect-mariadb
+    type: mysql
+    access: proxy
+    url: ${Database__Host}:${Database__Port}
+    database: ${Database__Name}
+    user: ${Database__User}
+    secureJsonData:
+      password: ${Database__Password}
+    isDefault: true
+    editable: false

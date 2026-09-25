@@ -38,11 +38,13 @@ public sealed class ComdirectAuthClient(
         return await PostTokenAsync(form, cancellationToken);
     }
 
-    /// <summary>Schritt 2a: legt eine neue Session an.</summary>
+    /// <summary>Schritt 2a: legt eine neue Session an. Sicher wiederholbar (GET, gegen 429/5xx abgesichert).</summary>
     public async Task<SessionInfo> CreateSessionAsync(OAuthToken token, CancellationToken cancellationToken = default)
     {
-        using var request = CreateRequest(HttpMethod.Get, "/api/session/clients/user/v1/sessions", token);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await ComdirectResilience.SendWithRetryAsync(
+            httpClient,
+            () => CreateRequest(HttpMethod.Get, "/api/session/clients/user/v1/sessions", token),
+            cancellationToken);
         await response.EnsureSuccessWithBodyAsync(cancellationToken);
 
         var sessions = await response.Content.ReadFromJsonAsync<SessionInfo[]>(cancellationToken: cancellationToken);
@@ -59,7 +61,9 @@ public sealed class ComdirectAuthClient(
     /// ACHTUNG (offizielle Doku, Kapitel 2.3): Fünf TAN-Challenges ohne zwischenzeitliche
     /// Einlösung einer korrekten TAN sperren den gesamten Online-Banking-Zugang, nicht nur
     /// den API-Zugriff. Diese Methode daher nicht unkontrolliert wiederholt aufrufen – siehe
-    /// Absicherung in ComdirectAuthCoordinator.StartAsync.
+    /// Absicherung in ComdirectAuthCoordinator.StartAsync. Bewusst OHNE automatischen
+    /// Retry bei 429/5xx (siehe ComdirectResilience) – ein Retry würde hier ungewollt eine
+    /// neue Challenge anfordern.
     /// </summary>
     public async Task<TanChallenge> RequestTanChallengeAsync(
         OAuthToken token,
@@ -103,6 +107,8 @@ public sealed class ComdirectAuthClient(
     /// gesamten Online-Banking-Zugang (nicht nur die API); nach zwei Fehlversuchen über die
     /// API lässt sich der Zähler nur durch eine korrekte TAN-Eingabe auf der comdirect-
     /// Website zurücksetzen. tanCode daher nur übergeben, wenn er wirklich vom Nutzer stammt.
+    /// Bewusst OHNE automatischen Retry bei 429/5xx (siehe ComdirectResilience) – ein
+    /// wiederholtes Einreichen des TAN-Codes ist hier riskant, nicht harmlos.
     /// </summary>
     public async Task ActivateSessionAsync(
         OAuthToken token,
@@ -163,21 +169,27 @@ public sealed class ComdirectAuthClient(
         return await PostTokenAsync(form, cancellationToken);
     }
 
+    /// <summary>Token-Anfragen sind gefahrlos wiederholbar (kein TAN-Bezug) – abgesichert gegen 429/5xx.</summary>
     private async Task<OAuthToken> PostTokenAsync(
         Dictionary<string, string> form,
         CancellationToken cancellationToken,
         string? bearerToken = null)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"{_options.BaseUrl}/oauth/token")
+        HttpRequestMessage CreateTokenRequest()
         {
-            Content = new FormUrlEncodedContent(form),
-        };
-        if (bearerToken is not null)
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_options.BaseUrl}/oauth/token")
+            {
+                Content = new FormUrlEncodedContent(form),
+            };
+            if (bearerToken is not null)
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
+            }
+
+            return request;
         }
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await ComdirectResilience.SendWithRetryAsync(httpClient, CreateTokenRequest, cancellationToken);
         await response.EnsureSuccessWithBodyAsync(cancellationToken);
 
         return await response.Content.ReadFromJsonAsync<OAuthToken>(cancellationToken: cancellationToken)

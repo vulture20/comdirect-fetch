@@ -38,15 +38,17 @@ comdirect verlangt beim Aufbau einer neuen Session eine TAN-Bestätigung, die de
 nicht automatisch erledigen kann (siehe `docs/konzept.md`, Abschnitt 3). Nach dem Start:
 
 ```bash
-curl -X POST http://localhost:8080/auth/start
+curl -X POST http://localhost:8750/auth/start
 # → löst z. B. eine PushTAN-Benachrichtigung in der comdirect-App aus
 # ACHTUNG: nicht wiederholt aufrufen, siehe Warnung oben zur TAN-Sperre
 
-curl -X POST http://localhost:8080/auth/confirm \
+curl -X POST http://localhost:8750/auth/confirm \
   -H "Content-Type: application/json" \
   -d '{"tanCode": null}'
 # tanCode nur nötig, wenn der TAN-Typ eine manuelle Eingabe verlangt (z. B. photoTAN/mobileTAN)
 ```
+
+(Port 8750 statt des ursprünglich geplanten 8080, da 8080 auf diesem Host bereits belegt war – siehe `docker/docker-compose.yml`.)
 
 Solange der Dienst danach durchgehend läuft, hält ein interner Hintergrundprozess die
 Session per Token-Refresh am Leben; eine erneute Freigabe ist erst nach einem Neustart
@@ -72,15 +74,32 @@ Die in `src/ComdirectFetch.Api` verwendeten Endpunkt-Pfade und JSON-Felder wurde
 offizielle comdirect REST API Dokumentation abgeglichen **und zusätzlich mit echten
 Zugangsdaten end-to-end live getestet**: Login/Session/TAN-Flow, Salden (3 Konten),
 Depotübersicht (inkl. Positionen mit ISIN/Name) und Kontoumsätze (inkl. Pagination über
-mehrere Seiten) funktionieren nachweislich (siehe `CHANGELOG.md` 0.2.0–0.5.0). Dabei wurden
+mehrere Seiten) funktionieren nachweislich (siehe `CHANGELOG.md` 0.2.0–0.6.0). Dabei wurden
 mehrere reale Abweichungen von der Doku gefunden und behoben (u. a. `bookingDate` als
 einfacher String statt verschachteltem Objekt, `paging-first` erfordert
 `transactionState=BOOKED`, comdirects Rate-Limit bei vielen Anfragen).
 
-**Bekannte Restrisiken**: Rate-Limiting bei sehr großen Depots/vielen Konten im Dauerbetrieb
-ist nur ansatzweise (Pausen zwischen Requests) adressiert, nicht mit Retry/Backoff. Fehler-
-texte mit Umlauten wurden in den Logs teils falsch codiert dargestellt (rein kosmetisch,
-noch nicht untersucht).
+Rate-Limiting (HTTP 429) wird seit 0.6.0 mit echtem Retry/Backoff behandelt (`ComdirectResilience`,
+Polly), zusätzlich zu proaktiven kurzen Pausen zwischen Requests – siehe `CHANGELOG.md`.
+
+**Bekannte Restrisiken**: Verhalten bei sehr großen Depots/vielen Konten im Dauerbetrieb ist
+nur mit den aktuellen Testdaten verifiziert, nicht an echten Großvolumina. Fehlertexte mit
+Umlauten wurden in den Logs teils falsch codiert dargestellt (rein kosmetisch, noch nicht
+untersucht).
+
+## Grafana-Dashboard
+
+`grafana/dashboards/salden.json` zeigt den Saldo-Verlauf je Konto plus Gesamtsumme (KONZEPT.md
+Abschnitt 6, Phase 1) und ist mit echten Daten verifiziert. Zwei Wege, es zu nutzen:
+
+- **Kein eigenes Grafana vorhanden**: `docker compose -f docker/docker-compose.yml up fetch grafana`
+  startet zusätzlich eine eigene Grafana-Instanz (Port 3000) mit Datenquelle und Dashboard
+  bereits automatisch provisioniert aus `grafana/provisioning/`.
+- **Bereits vorhandenes Grafana** (wie bei der Erstinstallation hier): `docker compose up fetch`
+  (ohne den `grafana`-Service) und Datenquelle + Dashboard manuell oder per
+  [Grafana-HTTP-API](https://grafana.com/docs/grafana/latest/developers/http_api/) im
+  bestehenden Grafana anlegen – Vorlagen dafür sind `grafana/provisioning/datasources/mariadb.yml`
+  und `grafana/dashboards/salden.json`.
 
 ## Versionierung
 

@@ -6,5 +6,5 @@ namespace ComdirectFetch.Domain;
 /// </summary>
 public static class AppVersion
 {
-    public const string Current = "0.5.0";
+    public const string Current = "0.6.0";
 }

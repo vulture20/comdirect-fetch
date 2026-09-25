@@ -4,6 +4,23 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.6.0 – Echtes Rate-Limit-Handling und Grafana-Dashboard
+
+- Die festen 300ms-Pausen aus 0.5.0 durch eine richtige Retry-Lösung ergänzt:
+  `ComdirectResilience` (Polly) wiederholt bei HTTP 429/5xx mit exponentiellem Backoff und
+  Jitter, respektiert einen `Retry-After`-Header falls vorhanden. Bewusst nur für Token- und
+  Datenendpunkte (Salden/Depot/Umsätze) aktiv – die TAN-Endpunkte (Session validieren/
+  aktivieren) bleiben ohne automatischen Retry, um nicht ungewollt Richtung 5-Challenge-
+  Sperre zu zählen (siehe `ComdirectAuthClient`).
+- Grafana-Dashboard „Salden" hinzugefügt (`grafana/dashboards/salden.json`): Saldo-Verlauf
+  je Konto plus Gesamtsumme, dazu ein Stat-Panel mit dem aktuellen Gesamtsaldo. Als
+  Provisioning-Vorlage (`grafana/provisioning/`) für Neuinstallationen ohne vorhandenes
+  Grafana; auf diesem Host stattdessen live über die Grafana-API in die bereits laufende
+  Grafana-Instanz importiert und gegen echte Daten verifiziert (3 Konten + Gesamtlinie,
+  Summe stimmt exakt).
+- Fetch-Dienst läuft jetzt auf Host-Port 8750 statt 8080 (Portkonflikt mit einem anderen
+  Dienst auf diesem Host), siehe `docker/docker-compose.yml`.
+
 ## 0.5.0 – Pagination und Fehlerdiagnose
 
 - HTTP-Fehlerantworten werden jetzt inklusive Response-Body geloggt (comdirect liefert dort

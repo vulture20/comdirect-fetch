@@ -1,0 +1,62 @@
+{
+  "uid": "comdirect-salden",
+  "title": "comdirect-fetch: Salden",
+  "description": "Saldo-Verlauf je Konto plus Gesamtsumme (KONZEPT.md Abschnitt 6, Phase 1).",
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "browser",
+  "time": { "from": "now-90d", "to": "now" },
+  "refresh": "5m",
+  "tags": ["comdirect-fetch"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Saldo-Verlauf je Konto (+ Gesamt)",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "spanNulls": true }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Gesamt" },
+            "properties": [{ "id": "custom.lineWidth", "value": 3 }]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ab.recorded_at AS time, a.display_name AS metric, ab.balance AS value\nFROM account_balances ab\nJOIN accounts a ON a.id = ab.account_id\nWHERE $__timeFilter(ab.recorded_at)\nUNION ALL\nSELECT ab.recorded_at AS time, 'Gesamt' AS metric, SUM(ab.balance) AS value\nFROM account_balances ab\nWHERE $__timeFilter(ab.recorded_at)\nGROUP BY ab.recorded_at\nORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Gesamtsaldo aktuell",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 14 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyEUR" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT SUM(balance) AS `Gesamtsaldo`\nFROM account_balances\nWHERE recorded_at = (SELECT MAX(recorded_at) FROM account_balances)"
+        }
+      ]
+    }
+  ]
+}
