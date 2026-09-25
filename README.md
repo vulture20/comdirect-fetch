@@ -71,6 +71,13 @@ docker compose -f docker/docker-compose.yml up --build
 Beim Start wendet der Dienst automatisch alle ausstehenden Datenbank-Migrationen aus
 `db/migrations/` an.
 
+## CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) baut und testet automatisch bei jedem
+Push auf einen Branch sowie bei jedem Pull Request gegen `main` – unabhängig vom Release-Workflow
+unten, der nur bei Versions-Tags läuft. Kein Docker-Image, keine Veröffentlichung, reines
+Build+Test-Gate.
+
 ## Fertige Images
 
 Bei jedem gepushten Versions-Tag (`vX.Y.Z`) baut und veröffentlicht

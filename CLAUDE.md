@@ -131,7 +131,15 @@ foo`), bash uses *that* exit status for the whole script, silently overriding an
 `exit N` earlier — write trap bodies as `if`/`fi` (which returns 0 on a false, no-else
 condition), not `[[ ]] && ...`, to avoid this.
 
-## Release automation
+## CI and release automation
+
+`.github/workflows/ci.yml` (Issue #10): `dotnet build` + `dotnet test` on every push to any
+branch and every PR against `main` — independent of the release workflow below, so a broken
+build/test surfaces immediately instead of only at the next release tag. Builds no Docker
+image, publishes nothing. `push` is scoped to `branches: ["**"]` specifically so a tag push
+doesn't *also* trigger this workflow redundantly alongside `docker-release.yml`'s own gate.
+Pure repo/CI tooling like `scripts/comdirectctl.sh` — not part of the Docker image, no
+`AppVersion` bump or release tag needed for changes to it.
 
 `.github/workflows/docker-release.yml`: on every pushed `vX.Y.Z` tag, runs `dotnet build`
 + `dotnet test` as a gate, then builds the Docker image and pushes it to
