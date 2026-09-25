@@ -18,6 +18,7 @@ namespace ComdirectFetch.Api;
 public sealed class ComdirectAuthClient(
     HttpClient httpClient,
     IOptions<ComdirectApiOptions> options,
+    ICredentialProvider credentialProvider,
     ComdirectRequestContext requestContext,
     ILogger<ComdirectAuthClient> logger)
 {
@@ -26,13 +27,14 @@ public sealed class ComdirectAuthClient(
     /// <summary>Schritt 1: initialer Access-/Refresh-Token per Resource-Owner-Password-Flow.</summary>
     public async Task<OAuthToken> RequestInitialTokenAsync(CancellationToken cancellationToken = default)
     {
+        var (username, password) = await credentialProvider.GetLoginCredentialsAsync(cancellationToken);
         var form = new Dictionary<string, string>
         {
             ["grant_type"] = "password",
             ["client_id"] = _options.ClientId,
             ["client_secret"] = _options.ClientSecret,
-            ["username"] = _options.Username,
-            ["password"] = _options.Password,
+            ["username"] = username,
+            ["password"] = password,
         };
 
         return await PostTokenAsync(form, cancellationToken);

@@ -160,6 +160,26 @@ Do this as part of the change itself, not only when the user asks for it.
 - Error message bodies from comdirect can appear with garbled umlauts in logs (cosmetic,
   root cause — likely a charset/encoding mismatch somewhere in the logging pipeline, not
   necessarily in the app itself — not yet investigated).
+- The four comdirect credentials now get better-than-plaintext-in-.env handling (v0.12.0,
+  `docs/konzept.md` §10, distinct from the session-token persistence above — that's the token,
+  this is the login credentials themselves). ClientId/ClientSecret: Docker Compose file secrets
+  (`docker/docker-compose.yml` `secrets:` block, files under `secrets/` — gitignored, must exist
+  before `docker compose up`), read via the shared-framework `Microsoft.Extensions.Configuration.
+  KeyPerFile` provider (`AddKeyPerFile("/run/secrets", optional: true)` in `Program.cs`) instead of
+  `env_file`. Username/Password: bootstrap-once-then-wipe — `POST /admin/credentials` /
+  `comdirectctl.sh set-credentials` (PIN via `read -s`, never a CLI arg) encrypts them
+  (`ComdirectFetch.Worker.Services.CredentialProvider`, AES-256-GCM via the same
+  `SecretEncryption` as the token but a **separate, dedicated** key — never
+  `TokenEncryptionKeyBase64`) into a new `credential_store` table
+  (`db/migrations/0007_credential_store.sql`, `ComdirectFetch.Data.CredentialRepository`, same
+  shape as `auth_token_store`). That key lives in its own file
+  (`Comdirect__CredentialKeyFilePath`, default `/run/secrets/credential_key`, bind-mounted from
+  outside `.env` and outside the compose project dir — deliberately not in `.env`, or wiping
+  Username/Password from `.env` would buy nothing). `ComdirectFetch.Api.ICredentialProvider`
+  decouples `ComdirectAuthClient` from `ComdirectApiOptions.Username/Password` so the value is
+  resolved at call time, not at DI-container-build time. Everything here is opt-in with a
+  transparent fallback to `.env`/`ComdirectApiOptions` if the key file or DB row is absent — no
+  forced migration for deployments that don't set this up.
 - Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
   — check there first before guessing at API behavior, but confirm against a real request
   when in doubt: the docs have been wrong before (see above).
