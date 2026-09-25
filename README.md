@@ -40,6 +40,7 @@ nicht automatisch erledigen kann (siehe `docs/konzept.md`, Abschnitt 3). Nach de
 ```bash
 curl -X POST http://localhost:8080/auth/start
 # → löst z. B. eine PushTAN-Benachrichtigung in der comdirect-App aus
+# ACHTUNG: nicht wiederholt aufrufen, siehe Warnung oben zur TAN-Sperre
 
 curl -X POST http://localhost:8080/auth/confirm \
   -H "Content-Type: application/json" \
@@ -53,14 +54,22 @@ oder einer längeren Downtime wieder nötig.
 
 `GET /health` zeigt den aktuellen Authentifizierungsstatus und die Anwendungsversion.
 
-## Wichtiger Hinweis zu den comdirect-Endpunkten
+## ⚠️ TAN-Sperre – bitte unbedingt beachten
 
-Die in `src/ComdirectFetch.Api` verwendeten Endpunkt-Pfade und JSON-Felder sind aus
-comdirect-Community-Quellen und quelloffenen Clients rekonstruiert, **nicht** gegen die
-offizielle Swagger/Postman-Collection (developer.comdirect.de) verifiziert. Vor dem ersten
-produktiven Lauf mit echten Zugangsdaten abgleichen und bei Abweichungen die DTOs in
-`BankingModels.cs`/`BrokerageModels.cs`/`SessionModels.cs` sowie die Pfade in den
-jeweiligen Clients anpassen.
+comdirect sperrt nach **drei falschen TAN-Eingaben** oder **fünf TAN-Challenges ohne
+zwischenzeitliche Einlösung einer korrekten TAN** den **gesamten Online-Banking-Zugang**
+(nicht nur den API-Zugriff). `POST /auth/start` daher nicht wiederholt/automatisiert
+aufrufen – der Dienst liefert bei bereits ausstehender Freigabe die bestehende Challenge
+zurück statt eine neue anzufordern, aber das schützt nicht vor externen Skripten/Retries.
+
+## Stand der comdirect-Endpunkte
+
+Die in `src/ComdirectFetch.Api` verwendeten Endpunkt-Pfade und JSON-Felder wurden gegen die
+offizielle comdirect REST API Dokumentation (Swagger, Postman-Collection, PDF-Spezifikation)
+abgeglichen und korrigiert – siehe `CHANGELOG.md` 0.2.0. Strukturell verifiziert; ein
+Testlauf gegen die echte API mit echten Zugangsdaten steht aber noch aus. Bei
+Abweichungen die DTOs in `BankingModels.cs`/`BrokerageModels.cs`/`SessionModels.cs` sowie
+die Pfade in den jeweiligen Clients anpassen.
 
 ## Versionierung
 

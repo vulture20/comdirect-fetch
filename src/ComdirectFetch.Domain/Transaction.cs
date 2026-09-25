@@ -15,6 +15,11 @@ public sealed class Transaction
     public required string Currency { get; set; }
     public string? BookingText { get; set; }
     public string? TransactionType { get; set; }
+
+    /// <summary>IBAN der Gegenseite (Remitter bei Gutschrift, Debtor/Creditor bei Belastung), falls von
+    /// comdirect geliefert. Primäres Signal zur Erkennung interner Umbuchungen (KONZEPT.md Abschnitt 6).</summary>
+    public string? CounterpartyIban { get; set; }
+
     public long? CategoryId { get; set; }
     public bool ManuallyCategorized { get; set; }
     public required DateTimeOffset FirstSeenAt { get; set; }

@@ -29,8 +29,22 @@ public sealed class ComdirectAuthCoordinator(
     public AuthState State { get; private set; } = AuthState.NichtAuthentifiziert;
     public OAuthToken? CurrentToken { get; private set; }
 
+    /// <summary>
+    /// ACHTUNG: comdirect sperrt nach fünf TAN-Challenges ohne zwischenzeitliche Einlösung
+    /// einer korrekten TAN den gesamten Online-Banking-Zugang (siehe ComdirectAuthClient).
+    /// Ist bereits eine Freigabe ausstehend, wird deshalb keine neue Challenge angefordert,
+    /// sondern die bestehende zurückgegeben.
+    /// </summary>
     public async Task<TanChallenge> StartAsync(CancellationToken cancellationToken = default)
     {
+        lock (_lock)
+        {
+            if (State == AuthState.TanAusstehend && _pendingChallenge is not null)
+            {
+                return _pendingChallenge;
+            }
+        }
+
         var token = await authClient.RequestInitialTokenAsync(cancellationToken);
         var session = await authClient.CreateSessionAsync(token, cancellationToken);
         var challenge = await authClient.RequestTanChallengeAsync(token, session, cancellationToken);

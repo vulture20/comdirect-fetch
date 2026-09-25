@@ -4,7 +4,8 @@ namespace ComdirectFetch.Tests;
 
 public class CategorizationLogicTests
 {
-    private static Transaction MakeTransaction(decimal amount, string? bookingText = null, string? transactionType = null) => new()
+    private static Transaction MakeTransaction(
+        decimal amount, string? bookingText = null, string? transactionType = null, string? counterpartyIban = null) => new()
     {
         AccountId = 1,
         ComdirectReference = "ref-1",
@@ -13,11 +14,28 @@ public class CategorizationLogicTests
         Currency = "EUR",
         BookingText = bookingText,
         TransactionType = transactionType,
+        CounterpartyIban = counterpartyIban,
         FirstSeenAt = DateTimeOffset.UtcNow,
     };
 
     [Fact]
-    public void Erkennt_interne_Umbuchung_anhand_bekannter_Iban()
+    public void Erkennt_interne_Umbuchung_anhand_strukturierter_Gegenkonto_Iban()
+    {
+        var transaction = MakeTransaction(100m, counterpartyIban: "DE02120300000000202051");
+
+        var result = CategorizationLogic.Categorize(
+            transaction,
+            ownIbans: ["DE02120300000000202051"],
+            internalCategoryId: 42,
+            rulesByPriority: [],
+            fallbackIncomeCategoryId: 1,
+            fallbackExpenseCategoryId: 2);
+
+        Assert.Equal(42, result);
+    }
+
+    [Fact]
+    public void Erkennt_interne_Umbuchung_per_Freitext_Fallback_wenn_keine_strukturierte_Iban_vorliegt()
     {
         var transaction = MakeTransaction(100m, bookingText: "Umbuchung DE02120300000000202051 Tagesgeld");
 

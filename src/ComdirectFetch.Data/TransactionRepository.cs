@@ -17,10 +17,10 @@ public sealed class TransactionRepository(IDbConnectionFactory connectionFactory
         const string sql = """
             INSERT IGNORE INTO transactions
                 (account_id, comdirect_reference, booking_date, value_date, amount, currency,
-                 booking_text, transaction_type, category_id, manually_categorized, first_seen_at)
+                 booking_text, transaction_type, counterparty_iban, category_id, manually_categorized, first_seen_at)
             VALUES
                 (@AccountId, @ComdirectReference, @BookingDate, @ValueDate, @Amount, @Currency,
-                 @BookingText, @TransactionType, @CategoryId, @ManuallyCategorized, @FirstSeenAt);
+                 @BookingText, @TransactionType, @CounterpartyIban, @CategoryId, @ManuallyCategorized, @FirstSeenAt);
             """;
 
         var affectedRows = await connection.ExecuteAsync(sql, transaction);
@@ -50,7 +50,7 @@ public sealed class TransactionRepository(IDbConnectionFactory connectionFactory
         const string sql = """
             SELECT id AS Id, account_id AS AccountId, comdirect_reference AS ComdirectReference,
                    booking_date AS BookingDate, value_date AS ValueDate, amount AS Amount, currency AS Currency,
-                   booking_text AS BookingText, transaction_type AS TransactionType,
+                   booking_text AS BookingText, transaction_type AS TransactionType, counterparty_iban AS CounterpartyIban,
                    category_id AS CategoryId, manually_categorized AS ManuallyCategorized, first_seen_at AS FirstSeenAt
             FROM transactions
             WHERE category_id IS NULL AND manually_categorized = 0;

@@ -15,7 +15,7 @@ public sealed class ComdirectBrokerageClient(
     public async Task<IReadOnlyList<DepotEntry>> GetDepotsAsync(
         OAuthToken token, CancellationToken cancellationToken = default)
     {
-        using var request = CreateRequest(HttpMethod.Get, "/api/brokerage/clients/user/v1/depots", token);
+        using var request = CreateRequest(HttpMethod.Get, "/api/brokerage/clients/user/v3/depots", token);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
@@ -26,7 +26,8 @@ public sealed class ComdirectBrokerageClient(
     public async Task<DepotPositionsResponse> GetDepotPositionsAsync(
         OAuthToken token, string depotId, CancellationToken cancellationToken = default)
     {
-        var path = $"/api/brokerage/v3/depots/{depotId}/positions";
+        // with-attr=instrument: ohne diesen Parameter liefert die Position weder ISIN noch Name.
+        var path = $"/api/brokerage/v3/depots/{depotId}/positions?with-attr=instrument";
         using var request = CreateRequest(HttpMethod.Get, path, token);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();

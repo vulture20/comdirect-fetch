@@ -2,7 +2,9 @@ using System.Text.Json.Serialization;
 
 namespace ComdirectFetch.Api;
 
-// Siehe Hinweis in BankingModels.cs: Best-Effort-Nachbau, vor Produktivbetrieb verifizieren.
+// Verifiziert gegen die offizielle comdirect REST API Dokumentation/Swagger
+// (/opt/comdirect-fetch/docs) – Endpunkte /brokerage/clients/{userId}/v3/depots und
+// /brokerage/v3/depots/{depotId}/positions.
 
 public sealed class DepotsResponse
 {
@@ -39,14 +41,13 @@ public sealed class DepotAggregation
 
 public sealed class DepotPositionEntry
 {
+    /// <summary>Nur die WKN steht direkt auf der Position; ISIN/Name kommen aus <see cref="Instrument"/>.</summary>
     [JsonPropertyName("wkn")]
     public string? Wkn { get; init; }
 
-    [JsonPropertyName("isin")]
-    public string? Isin { get; init; }
-
-    [JsonPropertyName("name")]
-    public required string Name { get; init; }
+    /// <summary>Nur befüllt, wenn die Anfrage mit Query-Parameter "with-attr=instrument" erfolgt.</summary>
+    [JsonPropertyName("instrument")]
+    public Instrument? Instrument { get; init; }
 
     [JsonPropertyName("quantity")]
     public required AmountValue Quantity { get; init; }
@@ -59,4 +60,16 @@ public sealed class DepotPositionEntry
 
     [JsonPropertyName("profitLossPurchaseAbs")]
     public AmountValue? ProfitLossAbsolute { get; init; }
+}
+
+public sealed class Instrument
+{
+    [JsonPropertyName("isin")]
+    public string? Isin { get; init; }
+
+    [JsonPropertyName("wkn")]
+    public string? Wkn { get; init; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
 }

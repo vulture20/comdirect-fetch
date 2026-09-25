@@ -33,10 +33,16 @@ Five projects under `src/`, referencing each other in one direction only
 - **`ComdirectFetch.Api`** — comdirect REST client: `ComdirectAuthClient` implements the
   multi-step OAuth2 + TAN flow (initial token → session → TAN challenge → activate →
   `cd_secondary` token exchange → refresh); `ComdirectBankingClient`/`ComdirectBrokerageClient`
-  fetch balances/transactions/depots/positions. **The exact endpoint paths and JSON field
-  names here are reconstructed from community sources, not verified against the official
-  Swagger/Postman collection** — expect to adjust `BankingModels.cs`/`BrokerageModels.cs`/
-  `SessionModels.cs` and the client paths against real responses.
+  fetch balances/transactions/depots/positions. Endpoint paths and JSON field names were
+  cross-checked against the official Swagger/Postman collection/PDF spec the user placed at
+  `/opt/comdirect-fetch/docs` (see `CHANGELOG.md` 0.2.0) — still no live test against the
+  real API with real credentials, but structurally verified, including quirks like amounts
+  being JSON strings and `bookingDate` being a nested `{"date": ...}` object.
+  **Safety-critical**: comdirect locks the entire online banking access (not just API
+  access) after three wrong TAN entries or five unredeemed TAN challenges — never call
+  `POST /auth/start` in a retry loop; `ComdirectAuthCoordinator.StartAsync` already returns
+  the existing pending challenge instead of requesting a new one, but that's not a full
+  guard against external retries.
 - **`ComdirectFetch.Data`** — Dapper + MySqlConnector repositories (one per table) and
   `DatabaseMigrator`, which runs the DbUp-based migration on startup against the scripts in
   `db/migrations/` (embedded into the assembly via the `.csproj`, not copied at runtime).
@@ -72,9 +78,9 @@ Do this as part of the change itself, not only when the user asks for it.
 
 ## Known gaps (see docs/konzept.md §9 for the full list)
 
-- comdirect API endpoint paths/payloads: unverified, see above.
-- Transaction dedup key assumes comdirect's `reference` is stable and unique per account;
-  unconfirmed against official docs.
-- No pagination handling yet for `GetTransactionsAsync` (marked with a `TODO` in
-  `ComdirectBankingClient`).
-- `ComdirectAuthCoordinator` state is in-memory only (no persistence across restarts).
+- No live test against the real comdirect API with real credentials yet — only
+  structurally verified against the official docs (see above).
+- `ComdirectAuthCoordinator` state is in-memory only (no persistence across restarts) —
+  a restart always needs a fresh TAN approval.
+- Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
+  — check there first before guessing at API behavior.

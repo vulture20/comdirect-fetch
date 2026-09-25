@@ -76,9 +76,9 @@ public sealed class PortfolioFetchService(
                     var domainPositions = positions.Values.Select(p => new PortfolioPosition
                     {
                         SnapshotId = snapshotId,
-                        Isin = p.Isin,
-                        Wkn = p.Wkn,
-                        DisplayName = p.Name,
+                        Isin = p.Instrument?.Isin,
+                        Wkn = p.Wkn ?? p.Instrument?.Wkn,
+                        DisplayName = p.Instrument?.Name ?? p.Wkn ?? "unbekannt",
                         Quantity = p.Quantity.Value,
                         MarketValue = p.CurrentValue.Value,
                         AcquisitionValue = p.PurchaseValue.Value,

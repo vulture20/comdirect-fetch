@@ -54,7 +54,13 @@ public sealed class ComdirectAuthClient(
         return sessions[0];
     }
 
-    /// <summary>Schritt 2b: stößt die TAN-Challenge an (löst z. B. eine PushTAN-Benachrichtigung aus).</summary>
+    /// <summary>
+    /// Schritt 2b: stößt die TAN-Challenge an (löst z. B. eine PushTAN-Benachrichtigung aus).
+    /// ACHTUNG (offizielle Doku, Kapitel 2.3): Fünf TAN-Challenges ohne zwischenzeitliche
+    /// Einlösung einer korrekten TAN sperren den gesamten Online-Banking-Zugang, nicht nur
+    /// den API-Zugriff. Diese Methode daher nicht unkontrolliert wiederholt aufrufen – siehe
+    /// Absicherung in ComdirectAuthCoordinator.StartAsync.
+    /// </summary>
     public async Task<TanChallenge> RequestTanChallengeAsync(
         OAuthToken token,
         SessionInfo session,
@@ -62,7 +68,14 @@ public sealed class ComdirectAuthClient(
     {
         var path = $"/api/session/clients/user/v1/sessions/{session.Identifier}/validate";
         using var request = CreateRequest(HttpMethod.Post, path, token);
-        request.Content = JsonContent.Create(session);
+        // Laut offizieller Doku (Kapitel 2.3) muss der Body IMMER sessionTanActive/activated2FA
+        // = true enthalten, unabhängig vom zuvor per GET abgerufenen Ist-Zustand.
+        request.Content = JsonContent.Create(new SessionInfo
+        {
+            Identifier = session.Identifier,
+            SessionTanActive = true,
+            Activated2Fa = true,
+        });
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -86,6 +99,10 @@ public sealed class ComdirectAuthClient(
     /// <summary>
     /// Schritt 2c: aktiviert die Session, nachdem die TAN in der App bestätigt wurde
     /// (PushTAN) bzw. mit manuell eingegebenem TAN-Code (photoTAN/mobileTAN).
+    /// ACHTUNG (offizielle Doku, Kapitel 2.4): Drei falsche TAN-Eingaben sperren den
+    /// gesamten Online-Banking-Zugang (nicht nur die API); nach zwei Fehlversuchen über die
+    /// API lässt sich der Zähler nur durch eine korrekte TAN-Eingabe auf der comdirect-
+    /// Website zurücksetzen. tanCode daher nur übergeben, wenn er wirklich vom Nutzer stammt.
     /// </summary>
     public async Task ActivateSessionAsync(
         OAuthToken token,
@@ -96,7 +113,13 @@ public sealed class ComdirectAuthClient(
     {
         var path = $"/api/session/clients/user/v1/sessions/{session.Identifier}";
         using var request = CreateRequest(HttpMethod.Patch, path, token);
-        request.Content = JsonContent.Create(session);
+        // Wie bei der Validierung: Body muss explizit sessionTanActive/activated2FA = true setzen.
+        request.Content = JsonContent.Create(new SessionInfo
+        {
+            Identifier = session.Identifier,
+            SessionTanActive = true,
+            Activated2Fa = true,
+        });
         request.Headers.Add("x-once-authentication-info", JsonSerializer.Serialize(new { id = challenge.Id }));
         if (!string.IsNullOrEmpty(tanCode))
         {

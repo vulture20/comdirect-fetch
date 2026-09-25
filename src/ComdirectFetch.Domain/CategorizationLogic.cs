@@ -15,8 +15,14 @@ public static class CategorizationLogic
         long? fallbackIncomeCategoryId,
         long? fallbackExpenseCategoryId)
     {
-        if (transaction.BookingText is not null
-            && ownIbans.Any(iban => transaction.BookingText.Contains(iban, StringComparison.OrdinalIgnoreCase)))
+        // Primär: strukturierte Gegenkonto-IBAN (comdirect liefert sie nicht für jede Buchung,
+        // z. B. Kartenzahlungen haben keine). Sekundär: Freitextsuche als Fallback.
+        var isInternalByIban = transaction.CounterpartyIban is not null
+            && ownIbans.Any(iban => string.Equals(iban, transaction.CounterpartyIban, StringComparison.OrdinalIgnoreCase));
+        var isInternalByText = transaction.BookingText is not null
+            && ownIbans.Any(iban => transaction.BookingText.Contains(iban, StringComparison.OrdinalIgnoreCase));
+
+        if (isInternalByIban || isInternalByText)
         {
             return internalCategoryId;
         }

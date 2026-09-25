@@ -45,7 +45,9 @@ Daraus ergibt sich für das Konzept:
 - Die eigentlichen Datenabrufe (Salden, Umsätze, Depotübersicht) nutzen einfach den jeweils aktuell gültigen Token und können ihr eigenes, gröberes Intervall haben.
 - Nur beim allerersten Start bzw. nach einem session-brechenden Ausfall ist eine manuelle TAN-Freigabe durch den Nutzer nötig. Dieser Zustand sollte im `sync_log` klar erkennbar sein (Status „Freigabe erforderlich“), damit der Nutzer benachrichtigt werden kann.
 
-**Hinweis zur Quellenlage**: Die Werte 10/20 Minuten stammen aus comdirect-Community-Beiträgen und quelloffenen Clients, nicht aus offizieller comdirect-Dokumentation, und sollten vor der technischen Umsetzung anhand der aktuellen offiziellen API-Dokumentation (Postman-Collection/Swagger über developer.comdirect.de) verifiziert werden, da comdirect diese Werte ändern kann.
+**Update (verifiziert)**: Der Nutzer hat die offizielle comdirect REST API Dokumentation (Swagger, Postman-Collection, PDF-Spezifikation) bereitgestellt. Sie bestätigt den oben beschriebenen Mechanismus: Access-Token-Gültigkeit 599 Sekunden (~10 Minuten), und „Eine Session-TAN bleibt so lange gültig, bis das letzte Access/Refresh-Token seine Gültigkeit verliert.“ Die Sliding-Window-Refresh-Strategie ist damit offiziell bestätigt, nicht mehr nur durch Community-Quellen gestützt.
+
+**Sicherheitshinweis (aus der offiziellen Doku, kritisch)**: comdirect sperrt nach **drei falschen TAN-Eingaben** bzw. **fünf TAN-Challenges ohne zwischenzeitliche Einlösung einer korrekten TAN** den **gesamten Online-Banking-Zugang** – nicht nur den API-Zugriff. Nach zwei Fehlversuchen über die API lässt sich der Zähler nur durch eine korrekte TAN-Eingabe auf der comdirect-Website zurücksetzen. Der `/auth/start`-Endpunkt darf daher nicht unkontrolliert wiederholt aufgerufen werden (die Implementierung liefert bei bereits ausstehender Freigabe die bestehende Challenge zurück statt eine neue anzufordern).
 
 Quellen:
 - [comdirect Community – REST API Schritt 2.3 Aktivierung TAN Session](https://community.comdirect.de/t5/website-apps/rest-api-schritt-2-3-aktivierung-tan-session/td-p/184745)
@@ -191,11 +193,11 @@ Diese Pflege übernimmt Claude Code während der Entwicklung selbstständig als 
 
 ## 9. Offene Punkte / Annahmen
 
-- **TAN-/Session-Gültigkeit** (Abschnitt 3): recherchiert (Access-Token ~10 Min., Refresh-Token ~20 Min., verlängert sich mit jedem Refresh) – Werte stammen aus Community-/Open-Source-Quellen, nicht aus offizieller comdirect-Doku, und sollten vor Umsetzung anhand der aktuellen offiziellen API-Dokumentation verifiziert werden.
+- **TAN-/Session-Gültigkeit** (Abschnitt 3): durch die offizielle comdirect-Doku bestätigt (Access-Token 599 Sek. ≈ 10 Min.; Session-TAN bleibt gültig, bis das letzte Access-/Refresh-Token-Paar abläuft). Erledigt.
 - **Genaue Env-Variablen-Liste** (Abschnitt 4): wird final in der technischen Umsetzung festgelegt.
 - **Priorisierung der Auswertungen** (Abschnitt 6): nach Datenabhängigkeit/Aufwand in vier Phasen vorgeschlagen; Bestätigung oder Anpassung durch den Nutzer steht noch aus.
 - **Kategorisierung von Buchungstexten** (Abschnitt 6): Mechanismus (interne Umbuchung → strukturierter Umsatztyp → Muster-Regeln → Vorzeichen-Fallback → manuelle Korrektur) ist skizziert; die konkreten Start-Muster/Regeln sind noch zu erarbeiten, sobald reale Umsatzdaten vorliegen.
 - **Umfang**: Konzept geht von einem einzelnen comdirect-Zugang aus (ein Nutzer, aber ggf. mehrere Konten/Depots innerhalb dieses Zugangs), keine Mandantenfähigkeit für mehrere getrennte comdirect-Zugänge.
 - **MariaDB-Bereitstellung**: Datenbank samt Zugangsdaten wird vom Nutzer extern zur Verfügung gestellt; Betrieb/Deployment der Datenbank ist nicht Teil dieses Projekts.
-- **Eindeutigkeit der Kontoumsatz-Referenz** (Abschnitt 5): Die Dedup-Logik für `transactions` setzt voraus, dass comdirect pro Umsatz eine stabile, eindeutige Referenz liefert. Das ist bisher nicht anhand der offiziellen API-Doku verifiziert; sollte keine stabile Referenz existieren, muss vor der Umsetzung ein Ersatzschlüssel definiert werden (z. B. Kombination aus Konto, Buchungstag, Betrag und Buchungstext).
-- **Migrationswerkzeug** (Abschnitt 8): Welches konkrete Werkzeug die Datenbank-Migrationen und deren Historie verwaltet, wird in der technischen Umsetzung festgelegt.
+- **Eindeutigkeit der Kontoumsatz-Referenz** (Abschnitt 5): Die offizielle Doku bezeichnet `reference` explizit als „unique reference code of the transaction“ – die Dedup-Annahme ist damit bestätigt. Offen bleibt nur, ob die Eindeutigkeit global oder je Konto gilt; der gewählte Schlüssel (`account_id`, `comdirect_reference`) ist für beide Fälle sicher.
+- **Migrationswerkzeug** (Abschnitt 8): In der technischen Umsetzung wurde DbUp gewählt (führt die Historie angewendeter SQL-Skripte in der Zieldatenbank selbst). Erledigt.
