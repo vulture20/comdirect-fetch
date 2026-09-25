@@ -34,14 +34,17 @@ to see them) — not an isolated sandbox. Two things that already bit us once:
   `grafana` service in `docker/docker-compose.yml` and no `grafana/provisioning/` directory
   (an earlier "self-contained deployment" version of both existed briefly and was removed
   again as speculative complexity for a hypothetical fresh install without existing Grafana —
-  don't re-add either without the user asking). Both comdirect-fetch dashboards
-  (`grafana/dashboards/salden.json`, uid `comdirect-salden`; `grafana/dashboards/depot.json`,
-  uid `comdirect-depot`) live in this repo as their source of truth and are provisioned into
-  the *existing* Grafana instance via its HTTP API (`POST /api/dashboards/db` with
-  `overwrite: true`, datasource uid `comdirect-mariadb`), using a Grafana service-account
-  token the user provided (Admin role — Editor role can't create datasources, that's a
-  Grafana permission, not a bug). After editing either dashboard JSON, re-push it the same
-  way rather than editing in the Grafana UI.
+  don't re-add either without the user asking). All four comdirect-fetch dashboards
+  (`grafana/dashboards/{salden,depot,cashflow,depot-performance}.json`, uids
+  `comdirect-{salden,depot,cashflow,depot-performance}`) live in this repo as their source of
+  truth and are provisioned into the *existing* Grafana instance, plus the MySQL/MariaDB
+  datasource (uid `comdirect-mariadb`), via `scripts/grafana-setup.sh` (Issue #9) — host-only
+  tooling like `comdirectctl.sh` (not baked into the Docker image, no `AppVersion` bump needed).
+  Idempotent; `GRAFANA_TOKEN` (a Grafana service-account token, Admin role — Editor can't create
+  datasources, that's a Grafana permission, not a bug) is required, `GRAFANA_URL` defaults to
+  `http://localhost:3000`, DB connection details for the datasource come from the local `.env`.
+  Replaces the earlier manual/ad-hoc `POST /api/dashboards/db` calls. After editing a dashboard
+  JSON, re-run `./scripts/grafana-setup.sh dashboards` rather than editing in the Grafana UI.
 
 ## Architecture
 

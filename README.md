@@ -181,9 +181,24 @@ Alle JSON-Dateien sind die Quelle der Wahrheit und werden per
 [Grafana-HTTP-API](https://grafana.com/docs/grafana/latest/developers/http_api/dashboard/)
 in die vorhandene Instanz importiert (`POST /api/dashboards/db`, `overwrite: true` – dieselbe
 Datei erneut posten überschreibt die vorhandene Version). Eine MySQL/MariaDB-Datenquelle mit
-uid `comdirect-mariadb` muss dort einmalig angelegt sein (Host/Port/DB/User/Passwort aus der
-`.env`); dafür sind in dieser bestehenden Grafana-Instanz Admin-Rechte nötig – ein
-Service-Account mit nur Editor-Rolle darf keine Datenquellen anlegen.
+uid `comdirect-mariadb` muss dort angelegt sein (Host/Port/DB/User/Passwort aus der `.env`);
+dafür sind in dieser bestehenden Grafana-Instanz Admin-Rechte nötig – ein Service-Account mit
+nur Editor-Rolle darf keine Datenquellen anlegen.
+
+Beides (Datenquelle + alle vier Dashboards) automatisiert per
+[`scripts/grafana-setup.sh`](scripts/grafana-setup.sh) statt manueller Ad-hoc-API-Calls –
+nützlich bei Erstinbetriebnahme oder nach einem Grafana-Rebuild auf einem neuen Host:
+
+```bash
+GRAFANA_TOKEN=<Service-Account-Token mit Admin-Rolle> ./scripts/grafana-setup.sh
+# GRAFANA_URL überschreibbar (Standard: http://localhost:3000)
+# Nur die Datenquelle: ./scripts/grafana-setup.sh datasource
+# Nur die Dashboards:  ./scripts/grafana-setup.sh dashboards
+```
+
+Idempotent – ein erneuter Lauf aktualisiert eine bereits vorhandene Datenquelle/Dashboards
+(gleiche `uid`), statt sie zu duplizieren. Datenbank-Verbindungsdaten für die Datenquelle liest
+das Skript aus der lokalen `.env`.
 
 ## Versionierung
 
