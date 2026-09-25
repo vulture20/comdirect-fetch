@@ -47,6 +47,7 @@
         "overrides": []
       },
       "options": {
+        "reduceOptions": { "values": true, "calcs": [], "fields": "" },
         "displayLabels": ["name", "percent"],
         "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] }
       },
