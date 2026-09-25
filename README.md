@@ -32,20 +32,34 @@ docker compose -f docker/docker-compose.yml up --build
 Beim Start wendet der Dienst automatisch alle ausstehenden Datenbank-Migrationen aus
 `db/migrations/` an.
 
-## Erste Anmeldung (TAN-Freigabe)
+## Erste Anmeldung (TAN-Freigabe) und Status
 
 comdirect verlangt beim Aufbau einer neuen Session eine TAN-Bestätigung, die der Container
-nicht automatisch erledigen kann (siehe `docs/konzept.md`, Abschnitt 3). Nach dem Start:
+nicht automatisch erledigen kann (siehe `docs/konzept.md`, Abschnitt 3). Einfachster Weg über
+[`scripts/comdirectctl.sh`](scripts/comdirectctl.sh) (Voraussetzung: `curl`, `jq`):
+
+```bash
+./scripts/comdirectctl.sh auth start
+# → löst z. B. eine PushTAN-Benachrichtigung in der comdirect-App aus
+# ACHTUNG: nicht wiederholt aufrufen, siehe Warnung unten zur TAN-Sperre
+
+./scripts/comdirectctl.sh auth confirm
+# tanCode als Argument nur nötig, wenn der TAN-Typ eine manuelle Eingabe verlangt
+# (z. B. photoTAN/mobileTAN): ./scripts/comdirectctl.sh auth confirm <TAN_CODE>
+
+./scripts/comdirectctl.sh status
+# menschenlesbarer Status: Auth-Status, Zeilen je Tabelle, letzte Abrufe.
+# Für Skripte/Monitoring: --json; Exit-Code 0 = authentifiziert, 1 = Freigabe nötig/Fehler,
+# 2 = Dienst nicht erreichbar (siehe comdirectctl.sh help für alle Codes).
+```
+
+Äquivalent direkt per `curl` gegen die HTTP-API (Basis-URL per `COMDIRECT_FETCH_URL`
+überschreibbar, Standard `http://localhost:8750`):
 
 ```bash
 curl -X POST http://localhost:8750/auth/start
-# → löst z. B. eine PushTAN-Benachrichtigung in der comdirect-App aus
-# ACHTUNG: nicht wiederholt aufrufen, siehe Warnung oben zur TAN-Sperre
-
-curl -X POST http://localhost:8750/auth/confirm \
-  -H "Content-Type: application/json" \
-  -d '{"tanCode": null}'
-# tanCode nur nötig, wenn der TAN-Typ eine manuelle Eingabe verlangt (z. B. photoTAN/mobileTAN)
+curl -X POST http://localhost:8750/auth/confirm -H "Content-Type: application/json" -d '{"tanCode": null}'
+curl http://localhost:8750/health
 ```
 
 (Port 8750 statt des ursprünglich geplanten 8080, da 8080 auf diesem Host bereits belegt war – siehe `docker/docker-compose.yml`.)
@@ -54,11 +68,9 @@ Solange der Dienst danach durchgehend läuft, hält ein interner Hintergrundproz
 Session per Token-Refresh am Leben; eine erneute Freigabe ist erst nach einem Neustart
 oder einer längeren Downtime wieder nötig.
 
-`GET /health` zeigt den aktuellen Authentifizierungsstatus und die Anwendungsversion.
-
 **Test-/Betriebshilfen** (berühren keine Session/TAN, gefahrlos wiederholbar):
-- `POST /debug/fetch-now` – stößt Salden-, Depotübersicht- und Umsatzabruf sofort an, statt auf die konfigurierten Intervalle zu warten.
-- `GET /debug/summary` – Zeilenanzahl je Tabelle plus die letzten 10 `sync_log`-Einträge, zur schnellen Verifikation ohne direkten DB-Zugriff.
+- `./scripts/comdirectctl.sh fetch-now` bzw. `POST /debug/fetch-now` – stößt Salden-, Depotübersicht- und Umsatzabruf sofort an, statt auf die konfigurierten Intervalle zu warten.
+- `./scripts/comdirectctl.sh status` bzw. `GET /debug/summary` – Zeilenanzahl je Tabelle plus die letzten 10 `sync_log`-Einträge, zur schnellen Verifikation ohne direkten DB-Zugriff.
 
 ## ⚠️ TAN-Sperre – bitte unbedingt beachten
 
@@ -74,7 +86,7 @@ Die in `src/ComdirectFetch.Api` verwendeten Endpunkt-Pfade und JSON-Felder wurde
 offizielle comdirect REST API Dokumentation abgeglichen **und zusätzlich mit echten
 Zugangsdaten end-to-end live getestet**: Login/Session/TAN-Flow, Salden (3 Konten),
 Depotübersicht (inkl. Positionen mit ISIN/Name) und Kontoumsätze (inkl. Pagination über
-mehrere Seiten) funktionieren nachweislich (siehe `CHANGELOG.md` 0.2.0–0.6.0). Dabei wurden
+mehrere Seiten) funktionieren nachweislich (siehe `CHANGELOG.md` 0.2.0–0.7.0). Dabei wurden
 mehrere reale Abweichungen von der Doku gefunden und behoben (u. a. `bookingDate` als
 einfacher String statt verschachteltem Objekt, `paging-first` erfordert
 `transactionState=BOOKED`, comdirects Rate-Limit bei vielen Anfragen).
@@ -87,19 +99,27 @@ nur mit den aktuellen Testdaten verifiziert, nicht an echten Großvolumina. Fehl
 Umlauten wurden in den Logs teils falsch codiert dargestellt (rein kosmetisch, noch nicht
 untersucht).
 
-## Grafana-Dashboard
+## Grafana-Dashboards
 
-`grafana/dashboards/salden.json` zeigt den Saldo-Verlauf je Konto plus Gesamtsumme (KONZEPT.md
-Abschnitt 6, Phase 1) und ist mit echten Daten verifiziert. Zwei Wege, es zu nutzen:
+Zwei Dashboards, beide mit echten Daten verifiziert (KONZEPT.md Abschnitt 6):
+
+- **`grafana/dashboards/salden.json`** – „Salden & Vermögen" (Phase 1): Saldo-Verlauf je
+  Konto plus Gesamtsumme, sowie Vermögensentwicklung (Konten + Depots kombiniert) mit
+  Stat-Panels für die jeweils aktuellen Werte.
+- **`grafana/dashboards/depot.json`** – „Depot" (Phase 2): Asset-Allokation als
+  Kreisdiagramm, Positionstabelle, sowie Kurswert- und Gewinn/Verlust-Entwicklung je
+  Einzelposition über die Zeit.
+
+Zwei Wege, sie zu nutzen:
 
 - **Kein eigenes Grafana vorhanden**: `docker compose -f docker/docker-compose.yml up fetch grafana`
-  startet zusätzlich eine eigene Grafana-Instanz (Port 3000) mit Datenquelle und Dashboard
-  bereits automatisch provisioniert aus `grafana/provisioning/`.
+  startet zusätzlich eine eigene Grafana-Instanz (Port 3000) mit Datenquelle und beiden
+  Dashboards bereits automatisch provisioniert aus `grafana/provisioning/`.
 - **Bereits vorhandenes Grafana** (wie bei der Erstinstallation hier): `docker compose up fetch`
-  (ohne den `grafana`-Service) und Datenquelle + Dashboard manuell oder per
+  (ohne den `grafana`-Service) und Datenquelle + Dashboards manuell oder per
   [Grafana-HTTP-API](https://grafana.com/docs/grafana/latest/developers/http_api/) im
   bestehenden Grafana anlegen – Vorlagen dafür sind `grafana/provisioning/datasources/mariadb.yml`
-  und `grafana/dashboards/salden.json`.
+  und die beiden Dashboard-JSONs oben.
 
 ## Versionierung
 

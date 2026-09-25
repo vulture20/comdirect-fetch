@@ -155,7 +155,10 @@ comdirect-fetch/
 ├── db/
 │   └── migrations/                # fortlaufend nummerierte, append-only Migrationsdateien (Schema-Version, siehe Abschnitt 8)
 ├── grafana/
-│   └── dashboards/                # exportierte Dashboard-Definitionen
+│   ├── dashboards/                # exportierte Dashboard-Definitionen
+│   └── provisioning/               # Grafana-Datenquelle + Dashboard-Provider (für Neuinstallationen)
+├── scripts/
+│   └── comdirectctl.sh             # TAN-Freigabe und Status-Abfrage, siehe README.md
 ├── docs/
 │   └── konzept.md                 # dieses Dokument
 ├── .env.example
@@ -203,4 +206,5 @@ Diese Pflege übernimmt Claude Code während der Entwicklung selbstständig als 
 - **Migrationswerkzeug** (Abschnitt 8): In der technischen Umsetzung wurde DbUp gewählt (führt die Historie angewendeter SQL-Skripte in der Zieldatenbank selbst). Erledigt.
 - **Live-Verifikation gegen die echte comdirect-API** (Abschnitt 3): Login/Session/TAN-Flow, Salden, Depotübersicht (inkl. Positionen) und Kontoumsätze (inkl. Pagination über mehrere Seiten) wurden mit echten Zugangsdaten erfolgreich end-to-end getestet, siehe `CHANGELOG.md` 0.3.0–0.5.0. Erledigt.
 - **Rate-Limiting** (Abschnitt 3): comdirect begrenzt die Anfragerate (HTTP 429 „rate.exceeded“) – bei intensivem Testen live beobachtet. Neben den proaktiven Pausen zwischen Pagination-Seiten/Konten gibt es jetzt ein echtes Retry-mit-Backoff (`ComdirectResilience`, siehe `CHANGELOG.md` 0.6.0) für Token- und Datenendpunkte. Erledigt für den Normalfall; ob das bei sehr großen Depots/Kontenzahlen im Dauerbetrieb ausreicht, bleibt zu beobachten.
-- **Auswertung Phase 1 „Saldo-Verlauf je Konto“** (Abschnitt 6): als Grafana-Dashboard umgesetzt und mit echten Daten verifiziert (`grafana/dashboards/salden.json`, siehe `CHANGELOG.md` 0.6.0). Auf diesem Host in eine bereits vorhandene Grafana-Instanz importiert statt über den optionalen `grafana`-Service in `docker/docker-compose.yml`. Erledigt.
+- **Auswertung Phase 1 „Saldo-Verlauf je Konto“ + „Vermögensentwicklung“** (Abschnitt 6): vollständig als Grafana-Dashboard umgesetzt und mit echten Daten verifiziert (`grafana/dashboards/salden.json`, siehe `CHANGELOG.md` 0.6.0/0.7.0). Vermögensentwicklung nutzt eine korrelierte Subquery (jeweils letzter bekannter Depotwert je Salden-Zeitpunkt), da Salden- und Depotübersicht-Abrufe auf unterschiedlichen Intervallen laufen. Auf diesem Host in eine bereits vorhandene Grafana-Instanz importiert statt über den optionalen `grafana`-Service in `docker/docker-compose.yml`. Erledigt.
+- **Auswertung Phase 2 „Asset-Allokation“ + „Einzelpositionsentwicklung“** (Abschnitt 6): als Grafana-Dashboard umgesetzt (`grafana/dashboards/depot.json`) und mit echten Daten verifiziert (21 Positionen über 4 Snapshots). Asset-Allokation weiterhin je Einzelposition, nicht nach Anlageklasse (siehe ursprüngliche Einschränkung oben). Erledigt.

@@ -1,10 +1,10 @@
 {
   "uid": "comdirect-salden",
-  "title": "comdirect-fetch: Salden",
-  "description": "Saldo-Verlauf je Konto plus Gesamtsumme (KONZEPT.md Abschnitt 6, Phase 1).",
+  "title": "comdirect-fetch: Salden & Vermögen",
+  "description": "Saldo-Verlauf je Konto und Vermögensentwicklung (Konten+Depots) – KONZEPT.md Abschnitt 6, Phase 1.",
   "editable": true,
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "timezone": "browser",
   "time": { "from": "now-90d", "to": "now" },
   "refresh": "5m",
@@ -39,10 +39,34 @@
       ]
     },
     {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Vermögensentwicklung (Konten + Depots)",
+      "description": "Summe aller Kontosalden je Salden-Abruf, zzgl. des zu diesem Zeitpunkt jeweils zuletzt bekannten Gesamt-Depotwerts (Salden und Depotübersicht laufen auf unterschiedlichen Intervallen, siehe KONZEPT.md Abschnitt 3).",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 14 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "spanNulls": true, "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT t.time AS time, 'Vermögen gesamt' AS metric,\n       t.balance_sum + COALESCE((\n         SELECT SUM(ps.total_value)\n         FROM portfolio_snapshots ps\n         WHERE ps.recorded_at = (\n           SELECT MAX(ps2.recorded_at) FROM portfolio_snapshots ps2 WHERE ps2.recorded_at <= t.time\n         )\n       ), 0) AS value\nFROM (\n  SELECT recorded_at AS time, SUM(balance) AS balance_sum\n  FROM account_balances\n  WHERE $__timeFilter(recorded_at)\n  GROUP BY recorded_at\n) t\nORDER BY t.time"
+        }
+      ]
+    },
+    {
       "id": 2,
       "type": "stat",
-      "title": "Gesamtsaldo aktuell",
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 14 },
+      "title": "Gesamtsaldo aktuell (nur Konten)",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 28 },
       "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
       "fieldConfig": {
         "defaults": { "unit": "currencyEUR" },
@@ -55,6 +79,26 @@
           "format": "table",
           "rawQuery": true,
           "rawSql": "SELECT SUM(balance) AS `Gesamtsaldo`\nFROM account_balances\nWHERE recorded_at = (SELECT MAX(recorded_at) FROM account_balances)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Vermögen aktuell (Konten + Depots)",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 28 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyEUR" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  (SELECT SUM(balance) FROM account_balances WHERE recorded_at = (SELECT MAX(recorded_at) FROM account_balances))\n  + COALESCE((SELECT SUM(total_value) FROM portfolio_snapshots WHERE recorded_at = (SELECT MAX(recorded_at) FROM portfolio_snapshots)), 0)\n  AS `Vermoegen`"
         }
       ]
     }

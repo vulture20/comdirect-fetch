@@ -31,11 +31,16 @@ to see them) — not an isolated sandbox. Two things that already bit us once:
   before picking a host port for anything new here.
 - **There's already a Grafana instance on this host** (container name `grafana`, port 3000,
   org "BugZone"). Don't start a second one from `docker/docker-compose.yml`'s optional
-  `grafana` service on this host — the comdirect-fetch dashboard was provisioned into the
-  *existing* instance via its HTTP API instead (datasource uid `comdirect-mariadb`, dashboard
-  uid `comdirect-salden`), using a Grafana service-account token the user provided (Admin
-  role — Editor role can't create datasources, that's a Grafana permission, not a bug).
-  `grafana/provisioning/` and the `grafana` compose service remain useful as the
+  `grafana` service on this host — both comdirect-fetch dashboards (`grafana/dashboards/
+  salden.json`, uid `comdirect-salden`; `grafana/dashboards/depot.json`, uid
+  `comdirect-depot`) were provisioned into the *existing* instance via its HTTP API instead
+  (`POST /api/dashboards/db` with `overwrite: true`, datasource uid `comdirect-mariadb`),
+  using a Grafana service-account token the user provided (Admin role — Editor role can't
+  create datasources, that's a Grafana permission, not a bug). After editing either
+  dashboard JSON, re-push it the same way rather than editing in the Grafana UI (which
+  `allowUiUpdates: false` in the provisioning config also discourages for the *provisioned*
+  path — irrelevant for this host's API-based path, but keep JSON-as-source-of-truth either
+  way). `grafana/provisioning/` and the `grafana` compose service remain useful as the
   self-contained path for a *fresh* environment without a pre-existing Grafana.
 
 ## Architecture
@@ -53,7 +58,7 @@ Five projects under `src/`, referencing each other in one direction only
   fetch balances/transactions/depots/positions. Endpoint paths and JSON field names were
   cross-checked against the official Swagger/Postman collection/PDF spec the user placed at
   `/opt/comdirect-fetch/docs`, **and then live-tested end-to-end with real credentials**
-  (see `CHANGELOG.md` 0.2.0–0.6.0): login/session/TAN, balances, portfolio overview, and
+  (see `CHANGELOG.md` 0.2.0–0.7.0): login/session/TAN, balances, portfolio overview, and
   paginated transactions all confirmed working. Several real API quirks the docs got wrong
   were found and fixed this way — e.g. `bookingDate` is a plain string in practice (not the
   documented nested `{"date": ...}` object; `FlexibleDateConverter` now accepts both), and
@@ -96,7 +101,21 @@ Five projects under `src/`, referencing each other in one direction only
   `POST /auth/start` then `POST /auth/confirm`. `GET /health` reports auth state and app
   version; `GET /debug/summary` reports row counts per table and the last 10 `sync_log`
   entries for quick verification without direct DB access.
-- **`ComdirectFetch.Tests`** — xUnit; currently covers `CategorizationLogic` only.
+- **`ComdirectFetch.Tests`** — xUnit; covers `CategorizationLogic`, `ComdirectResilience`
+  (via a fake `HttpMessageHandler`, using a short-delay pipeline from `BuildPipeline` so
+  retry tests don't wait on real backoff), and the banking DTO JSON quirks.
+
+## Operator tooling
+
+`scripts/comdirectctl.sh` (bash, needs `curl` + `jq`) wraps the TAN flow and status
+endpoints for humans and scripts alike: `auth start`/`auth confirm`, `status` (add `--json`
+for machine consumption), `fetch-now`. Exit codes are meaningful (0 authenticated, 1 needs
+attention, 2 unreachable, 3 missing deps, 64 bad usage) so it's usable in monitoring/cron,
+not just interactively. If you touch this script, know the trap gotcha it already hit once:
+under `set -e`, if the last command in an `EXIT` trap evaluates false (e.g. `[[ cond ]] &&
+foo`), bash uses *that* exit status for the whole script, silently overriding an explicit
+`exit N` earlier — write trap bodies as `if`/`fi` (which returns 0 on a false, no-else
+condition), not `[[ ]] && ...`, to avoid this.
 
 ## Data model and schema versioning
 

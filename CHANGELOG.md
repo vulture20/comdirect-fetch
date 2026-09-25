@@ -4,6 +4,29 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.7.0 – Phase 1/2 der Auswertungen abgeschlossen, Bedien-Skript
+
+- **Vermögensentwicklung** (Phase 1 vervollständigt): neues Panel im Salden-Dashboard,
+  das Kontosalden je Salden-Abruf mit dem jeweils zuletzt bekannten Gesamt-Depotwert
+  summiert (Salden und Depotübersicht laufen auf unterschiedlichen Intervallen, daher
+  korrelierte Subquery statt exaktem Zeitstempel-Join). Dazu ein Stat-Panel
+  „Vermögen aktuell". Dashboard entsprechend umbenannt zu „Salden & Vermögen".
+- **Neues Depot-Dashboard** (`grafana/dashboards/depot.json`, Phase 2): Asset-Allokation
+  als Kreisdiagramm (aktuellste Depotübersicht), Positionstabelle, sowie zwei
+  Zeitreihen-Panels für Kurswert- und Gewinn/Verlust-Entwicklung je Einzelposition.
+  Alle Panels mit echten Live-Testdaten verifiziert (Vermögen ~52.100 €, 21 Positionen
+  über 4 Snapshots).
+- **`scripts/comdirectctl.sh`**: Bash-Hilfsskript für TAN-Freigabe (`auth start`/
+  `auth confirm`) und Status-Abfrage (`status`, `status --json`). Status ist sowohl
+  menschenlesbar formatiert als auch als rohes JSON für Monitoring/Automatisierung
+  verfügbar, mit sprechenden Exit-Codes (0 = authentifiziert, 1 = keine/ausstehende
+  Freigabe oder Fehlerantwort, 2 = Dienst nicht erreichbar, 3 = fehlende Abhängigkeiten
+  curl/jq, 64 = falscher Aufruf). Enthält denselben TAN-Sperre-Warnhinweis wie
+  README.md/CLAUDE.md. Beim Testen einen Bash-Fallstrick gefunden: unter `set -e`
+  überschrieb ein zuletzt "fehlgeschlagen" ausgewerteter `[[ ]] && ...`-Befehl im
+  `EXIT`-Trap den eigentlichen `exit`-Code des Skripts – behoben durch `if`-Statement
+  statt `&&`-Verkettung in der Cleanup-Funktion.
+
 ## 0.6.0 – Echtes Rate-Limit-Handling und Grafana-Dashboard
 
 - Die festen 300ms-Pausen aus 0.5.0 durch eine richtige Retry-Lösung ergänzt:
