@@ -1,0 +1,13 @@
+# Lädt die JSON-Dashboards aus grafana/dashboards/ (KONZEPT.md Abschnitt 7: "exportierte
+# Dashboard-Definitionen") automatisch beim Start – Dashboards sind damit Code, nicht nur
+# Klick-Konfiguration in der Grafana-UI.
+apiVersion: 1
+
+providers:
+  - name: comdirect-fetch
+    type: file
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

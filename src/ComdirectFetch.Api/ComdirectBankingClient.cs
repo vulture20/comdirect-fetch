@@ -18,8 +18,10 @@ public sealed class ComdirectBankingClient(
     public async Task<IReadOnlyList<AccountBalanceEntry>> GetBalancesAsync(
         OAuthToken token, CancellationToken cancellationToken = default)
     {
-        using var request = CreateRequest(HttpMethod.Get, "/api/banking/clients/user/v2/accounts/balances", token);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await ComdirectResilience.SendWithRetryAsync(
+            httpClient,
+            () => CreateRequest(HttpMethod.Get, "/api/banking/clients/user/v2/accounts/balances", token),
+            cancellationToken);
         await response.EnsureSuccessWithBodyAsync(cancellationToken);
 
         var body = await response.Content.ReadFromJsonAsync<AccountBalanceResponse>(cancellationToken: cancellationToken);
@@ -42,8 +44,10 @@ public sealed class ComdirectBankingClient(
         while (true)
         {
             var path = $"/api/banking/v1/accounts/{accountId}/transactions?transactionState=BOOKED&paging-first={first}";
-            using var request = CreateRequest(HttpMethod.Get, path, token);
-            using var response = await httpClient.SendAsync(request, cancellationToken);
+            using var response = await ComdirectResilience.SendWithRetryAsync(
+                httpClient,
+                () => CreateRequest(HttpMethod.Get, path, token),
+                cancellationToken);
             await response.EnsureSuccessWithBodyAsync(cancellationToken);
 
             var body = await response.Content.ReadFromJsonAsync<TransactionsResponse>(cancellationToken: cancellationToken);
@@ -61,8 +65,9 @@ public sealed class ComdirectBankingClient(
                 break;
             }
 
-            // Kleine Pause zwischen Seiten, um comdirects Rate-Limit nicht zu strapazieren
-            // (live beobachtet: viele Anfragen kurz hintereinander führen zu HTTP 429).
+            // Proaktive kleine Pause zwischen Seiten, um HTTP 429 im Regelfall gar nicht erst
+            // zu provozieren (live beobachtet). ComdirectResilience fängt einzelne 429 zusätzlich
+            // reaktiv mit Backoff ab, falls die Pause allein nicht reicht.
             await Task.Delay(TimeSpan.FromMilliseconds(300), cancellationToken);
         }
 

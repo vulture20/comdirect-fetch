@@ -15,8 +15,10 @@ public sealed class ComdirectBrokerageClient(
     public async Task<IReadOnlyList<DepotEntry>> GetDepotsAsync(
         OAuthToken token, CancellationToken cancellationToken = default)
     {
-        using var request = CreateRequest(HttpMethod.Get, "/api/brokerage/clients/user/v3/depots", token);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await ComdirectResilience.SendWithRetryAsync(
+            httpClient,
+            () => CreateRequest(HttpMethod.Get, "/api/brokerage/clients/user/v3/depots", token),
+            cancellationToken);
         await response.EnsureSuccessWithBodyAsync(cancellationToken);
 
         var body = await response.Content.ReadFromJsonAsync<DepotsResponse>(cancellationToken: cancellationToken);
@@ -28,8 +30,10 @@ public sealed class ComdirectBrokerageClient(
     {
         // with-attr=instrument: ohne diesen Parameter liefert die Position weder ISIN noch Name.
         var path = $"/api/brokerage/v3/depots/{depotId}/positions?with-attr=instrument";
-        using var request = CreateRequest(HttpMethod.Get, path, token);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await ComdirectResilience.SendWithRetryAsync(
+            httpClient,
+            () => CreateRequest(HttpMethod.Get, path, token),
+            cancellationToken);
         await response.EnsureSuccessWithBodyAsync(cancellationToken);
 
         return await response.Content.ReadFromJsonAsync<DepotPositionsResponse>(cancellationToken: cancellationToken)

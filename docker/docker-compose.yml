@@ -1,5 +1,10 @@
 # MariaDB läuft extern beim Nutzer und ist bewusst nicht Teil dieser Compose-Datei
-# (KONZEPT.md Abschnitt 2). Grafana ist optional (Abschnitt 2/6).
+# (KONZEPT.md Abschnitt 2). Grafana ist optional (Abschnitt 2/6) und nur für Umgebungen ohne
+# bereits vorhandene Grafana-Instanz gedacht – dann `docker compose up fetch grafana`.
+# Läuft auf dem Host bereits ein eigenes Grafana (wie bei der Erstinstallation hier), einfach
+# `docker compose up fetch` (ohne den grafana-Service) und stattdessen Datenquelle + Dashboard
+# per Grafana-API/UI im bestehenden Grafana anlegen (Vorlage: grafana/dashboards/salden.json,
+# Datenquelle: grafana/provisioning/datasources/mariadb.yml).
 
 services:
   fetch:
@@ -10,12 +15,18 @@ services:
       - ../.env
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "8750:8080"
 
   grafana:
     image: grafana/grafana-oss:latest
     restart: unless-stopped
+    env_file:
+      # Liefert sowohl GF_SECURITY_ADMIN_USER/PASSWORD (siehe .env.example) für Grafana selbst
+      # als auch Database__* für die Variablen-Interpolation in grafana/provisioning/ (Grafana
+      # löst ${Database__Host} etc. selbst aus seiner Prozessumgebung auf).
+      - ../.env
     ports:
       - "3000:3000"
     volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
       - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
