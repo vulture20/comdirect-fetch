@@ -32,6 +32,22 @@ docker compose -f docker/docker-compose.yml up --build
 Beim Start wendet der Dienst automatisch alle ausstehenden Datenbank-Migrationen aus
 `db/migrations/` an.
 
+## Fertige Images
+
+Bei jedem gepushten Versions-Tag (`vX.Y.Z`) baut und veröffentlicht
+[`.github/workflows/docker-release.yml`](.github/workflows/docker-release.yml) automatisch
+ein Docker-Image nach GitHub Container Registry, getaggt sowohl mit der Versionsnummer als
+auch mit `latest`:
+
+```bash
+docker pull ghcr.io/vulture20/comdirect-fetch:latest
+docker pull ghcr.io/vulture20/comdirect-fetch:v0.7.0
+```
+
+Vorher läuft `dotnet build`/`dotnet test` als Gate – schlägt das fehl, wird nichts
+veröffentlicht. Manueller Testlauf (ohne `latest` zu überschreiben) über
+„Run workflow" im Actions-Tab bzw. `gh workflow run docker-release.yml`.
+
 ## Erste Anmeldung (TAN-Freigabe) und Status
 
 comdirect verlangt beim Aufbau einer neuen Session eine TAN-Bestätigung, die der Container

@@ -1,0 +1,62 @@
+name: Docker Release
+
+# Baut und veröffentlicht das Docker-Image bei jedem gepushten Versions-Tag (vX.Y.Z) auf
+# GitHub Container Registry (ghcr.io) – kein zusätzliches Secret nötig, GITHUB_TOKEN reicht.
+# Getaggt wird sowohl mit dem Versions-Tag selbst als auch mit "latest".
+#
+# workflow_dispatch erlaubt einen manuellen Testlauf (z. B. nach Änderungen an diesem
+# Workflow); dabei wird NICHT "latest" überschrieben, sondern nur ein "manual-<Laufnummer>"
+# Tag gepusht, damit ein Testlauf nicht versehentlich als aktuelles Release erscheint.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch: {}
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: dotnet build
+      - run: dotnet test
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Docker-Tags bestimmen
+        id: tags
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "tags=${IMAGE}:${GITHUB_REF_NAME},${IMAGE}:latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=${IMAGE}:manual-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}

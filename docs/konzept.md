@@ -143,6 +143,9 @@ Diese Priorisierung ist ein Vorschlag und kann vom Nutzer angepasst werden, insb
 
 ```
 comdirect-fetch/
+├── .github/
+│   └── workflows/
+│       └── docker-release.yml     # baut+pusht das Docker-Image nach ghcr.io bei jedem vX.Y.Z-Tag
 ├── src/
 │   ├── ComdirectFetch.Api/        # Anbindung an die comdirect-API (Auth, Requests)
 │   ├── ComdirectFetch.Domain/     # Domänenmodelle (Konto, Depot, Position, Umsatz, ...)
@@ -184,6 +187,8 @@ Anwendung und Datenbankstruktur erhalten je eine eigene, unabhängige Versionsnu
 - **MAJOR**: nicht abwärtskompatible Änderung (z. B. eine Datenmodell-Änderung, die bestehende Daten inkompatibel macht)
 
 Die Versionsnummer wird zentral im Quellcode gepflegt, beim Start der Anwendung protokolliert und als Docker-Image-Tag verwendet, sodass jederzeit nachvollziehbar ist, welcher Stand läuft. Damit sich auch im Nachhinein zuordnen lässt, mit welcher App-Version ein Datensatz geschrieben wurde, wird die Anwendungsversion zusätzlich in jedem `sync_log`-Eintrag festgehalten (Abschnitt 5).
+
+Ein Git-Tag `vX.Y.Z`, der der `AppVersion` entspricht, löst automatisiert Build und Veröffentlichung des passenden Docker-Images aus (`.github/workflows/docker-release.yml`, GitHub Container Registry) – getaggt mit der Versionsnummer und zusätzlich mit `latest`. Vorher müssen Build und Tests erfolgreich sein.
 
 **Datenbank-Schema-Version**: Jede strukturelle Änderung (neue Tabelle, neue Spalte, geänderter Typ) wird als eigene, fortlaufend nummerierte Migrationsdatei in `db/migrations/` abgelegt (Abschnitt 7). Bestehende Migrationen werden nie nachträglich verändert, nur neue ergänzt – append-only, analog zum historisierenden Datenprinzip aus Abschnitt 5. Ein Migrationswerkzeug führt die Historie der bereits angewendeten Migrationen in der Datenbank selbst; welches Werkzeug konkret zum Einsatz kommt, ist Teil der technischen Umsetzung (Abschnitt 9).
 
