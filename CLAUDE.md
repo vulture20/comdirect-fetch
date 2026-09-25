@@ -228,6 +228,16 @@ Do this as part of the change itself, not only when the user asks for it.
   crash mid-run just gets caught up by the next run. Live-verified against the real DB using
   synthetic rows dated years outside the real data's range, confirming both consolidation and
   deletion work correctly and real data is never touched.
+- No UI/CRUD for `categories`/`categorization_rules` yet — both are read-only in code today
+  (`CategoryRepository`/`CategorizationRuleRepository` only have `GetAll*`), every past change
+  went through a new append-only migration. A design is written up in `docs/konzept.md` §12: a
+  small worker-hosted web admin page under `/admin/` (table editor, no build toolchain/framework)
+  with CRUD endpoints, a real-data dry-run (single candidate rule preview + full simulate-before-
+  commit diff, both reusing the already-pure `CategorizationLogic.Categorize`), HTTP Basic Auth
+  via a new `Admin__Password` (deliberately stricter than the unauthenticated `/debug/*`/`/auth/*`
+  endpoints, since this writes durable config rather than triggering a one-off action), and
+  server-side protection against deleting/renaming the three code-anchored special category names
+  (`Intern/Neutral`, `Sonstige Einnahme`, `Sonstige Ausgabe`) — concept only, not yet implemented.
 - Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
   — check there first before guessing at API behavior, but confirm against a real request
   when in doubt: the docs have been wrong before (see above).
