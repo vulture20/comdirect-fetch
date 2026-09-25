@@ -107,11 +107,18 @@ Five projects under `src/`, referencing each other in one direction only
 
 ## Operator tooling
 
-`scripts/comdirectctl.sh` (bash, needs `curl` + `jq`) wraps the TAN flow and status
+`scripts/comdirectctl.sh` (bash, needs `curl` + `jq` + `openssl`) wraps the TAN flow and status
 endpoints for humans and scripts alike: `auth start`/`auth confirm`, `status` (add `--json`
-for machine consumption), `fetch-now`, `recategorize`. Exit codes are meaningful (0 authenticated, 1 needs
+for machine consumption), `fetch-now`, `recategorize`, `set-credentials` (§10 B bootstrap),
+`generate-token-key`/`generate-bootstrap-key` (random-key helpers for
+`Comdirect__TokenEncryptionKeyBase64` and the §10 B bootstrap key file — both pure local
+commands, never touch the running service; `generate-bootstrap-key` refuses to overwrite an
+existing key file, since that would orphan whatever is already encrypted in `credential_store`).
+Exit codes are meaningful (0 authenticated, 1 needs
 attention, 2 unreachable, 3 missing deps, 64 bad usage) so it's usable in monitoring/cron,
-not just interactively. If you touch this script, know the trap gotcha it already hit once:
+not just interactively. **Not baked into the Docker image** (`docker/Dockerfile` never copies
+`scripts/`) — it's host-only tooling, so changes to it don't need an `AppVersion` bump or a
+release tag. If you touch this script, know the trap gotcha it already hit once:
 under `set -e`, if the last command in an `EXIT` trap evaluates false (e.g. `[[ cond ]] &&
 foo`), bash uses *that* exit status for the whole script, silently overriding an explicit
 `exit N` earlier — write trap bodies as `if`/`fi` (which returns 0 on a false, no-else
