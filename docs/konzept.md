@@ -248,6 +248,12 @@ Diese Pflege übernimmt Claude Code während der Entwicklung selbstständig als 
   gesetzte Zeiträume), automatisch per neuem Hintergrunddienst plus manuell auslösbar. Live
   verifiziert (synthetische Testdaten weit außerhalb des echten Datenbestands, echte Daten dabei
   nachweislich unangetastet). Erledigt.
+- **Bedienoberfläche für Kategorien/Regeln** (Abschnitt 12): Konzept steht (Abschnitt 12) – kleine,
+  vom Worker mitausgelieferte Web-Oberfläche mit CRUD für `categories`/`categorization_rules`,
+  Testen gegen Echtdaten (Einzel-Regel-Vorschau und volle Simulation vor dem Commit), zusätzlich
+  per HTTP-Basic-Auth abgesichert (anders als die übrigen, bewusst ungeschützten `/debug/*`-
+  Endpunkte, da hier dauerhafte Konfiguration geändert wird, nicht nur eine Aktion angestoßen).
+  Noch nicht umgesetzt – Umsetzung folgt auf expliziten Zuruf.
 
 ## 10. Sichere Ablage der comdirect-Zugangsdaten (umgesetzt in 0.12.0)
 
@@ -422,3 +428,80 @@ Die bestehenden Dashboards (`salden.json`, `depot.json`) fragen `account_balance
 noch die verdichtete Auflösung (1 Punkt/Tag statt alle 15/60 Minuten) – ohne Änderung an den
 Dashboard-Queries selbst, da dieselben Tabellen/Spalten weiterverwendet werden. Erwartetes,
 gewolltes Verhalten dieses Features, keine Nebenwirkung, die extra behandelt werden müsste.
+
+## 12. Bedienoberfläche für Kategorien/Regeln (Konzept, noch nicht umgesetzt)
+
+**Ausgangslage**: `categories` und `categorization_rules` sind im Code aktuell rein lesbar
+(`CategoryRepository.GetAllAsync`, `CategorizationRuleRepository.GetAllOrderedByPriorityAsync`
+– keine Create/Update/Delete-Methoden). Jede bisherige Änderung am Regelsatz lief über eine neue,
+append-only SQL-Migration (`0002_seed_categories.sql`, `0004_extend_categorization_rules.sql`,
+`0005_fix_paypal_merchant_patterns.sql`) – funktional korrekt, aber unkomfortabel für iteratives
+Anpassen, und ohne Möglichkeit, eine Änderung vor dem Anwenden gegen echte Buchungstexte zu prüfen.
+`CategorizationLogic.Categorize` (Domain) ist dabei bereits eine reine, nebenwirkungsfreie Funktion
+– das macht ein risikofreies Testen gegen echte, bereits gespeicherte Umsätze technisch einfach,
+ganz ohne etwas zu schreiben.
+
+### Editier-Weg: kleine, vom Worker mitausgelieferte Web-Oberfläche
+
+Statt CLI/REST-CRUD oder eines Export/Edit/Import-Zyklus (beide ebenfalls erwogen, aber nicht
+gewählt) eine schlanke HTML/JS-Seite, vom Worker selbst unter einem neuen Pfad (Vorschlag:
+`/admin/`) ausgeliefert – kein Build-Toolchain/Framework, um die Komplexität gering zu halten
+(passend zur bisherigen Projekt-Philosophie, keine Infrastruktur für hypothetische künftige
+Bedürfnisse aufzubauen). Tabellen-Editor für beide Entitäten:
+
+- **Kategorien**: Name, Typ (Einnahme/Ausgabe/InternNeutral).
+- **Regeln**: Muster, geprüftes Feld (BookingText/TransactionType), Kategorie, Priorität.
+
+Neue CRUD-Endpunkte (`GET`/`POST`/`PUT`/`DELETE` je Entität, Vorschlag `/admin/api/categories`,
+`/admin/api/rules`), dafür neue Repository-Methoden (`CreateAsync`/`UpdateAsync`/`DeleteAsync`) in
+`CategoryRepository`/`CategorizationRuleRepository`, die bisher nur lesend sind.
+
+**Prioritäts-Kollisionen**: `CategorizationLogic` prüft Regeln aufsteigend nach Priorität, „erste
+Übereinstimmung gewinnt" – bei zwei Regeln mit identischer Priorität ist die Reihenfolge zwischen
+ihnen undefiniert (abhängig von der SQL-Rückgabereihenfolge). Die CRUD-Validierung sollte beim
+Anlegen/Ändern einer Regel auf eine bereits vergebene Priorität hinweisen (Warnung, kein Hard-Block
+– eine Kollision ist nicht zwangsläufig falsch, nur mehrdeutig).
+
+### Testen gegen Echtdaten
+
+Zwei Ebenen, beide rein lesend (nutzen `CategorizationLogic.Categorize` direkt, schreiben nichts):
+
+- **Einzel-Regel-Vorschau** (Vorschlag: `POST /admin/api/rules/preview`): nimmt eine
+  Kandidaten-Regel (Muster, Feld, Priorität, Kategorie – noch nicht gespeichert) entgegen und gibt
+  zurück, welche echten, bereits gespeicherten Umsätze sie treffen würde, inkl. deren aktueller
+  Kategorie. Deckt den häufigsten Fall ab: „passt dieses neue Muster wirklich nur auf das, was ich
+  meine, bevor ich es speichere?"
+- **Volle Simulation** (Vorschlag: `POST /admin/api/rules/simulate`): wendet den kompletten,
+  aktuell in der DB gespeicherten Regelsatz auf alle nicht manuell kategorisierten Umsätze an –
+  wie `RecategorizeAllAsync`, aber ohne `UpdateCategoryAsync`-Aufruf – und liefert einen Diff
+  (alte → neue Kategorie je betroffenem Umsatz) zurück. Die Web-Oberfläche zeigt diesen Diff vor
+  dem eigentlichen Commit; Bestätigen löst das bereits bestehende `POST /debug/recategorize` aus,
+  das dann tatsächlich schreibt.
+
+### Zugriffsschutz
+
+Bewusst anders als die übrigen `/debug/*`/`/auth/*`-Endpunkte (die bleiben ungeschützt – reine,
+sofort abgeschlossene Aktionen ohne dauerhafte Konfigurationsänderung): die neuen `/admin/*`-Pfade
+(Web-Oberfläche **und** die zugehörigen CRUD-/Test-Endpunkte) bekommen HTTP-Basic-Auth mit einem
+Shared-Passwort aus einer neuen Konfiguration (Vorschlag: `Admin__Password`) – analog zum
+bisherigen Muster „ein Secret in `.env`" (`Comdirect__TokenEncryptionKeyBase64`, `GRAFANA_TOKEN`).
+Kein neues NuGet-Paket nötig, Basic Auth lässt sich als einfacher Header-Check
+(`Authorization: Basic base64(user:pass)`) in einer kleinen eigenen Middleware umsetzen. Ist
+`Admin__Password` nicht gesetzt, liefert `/admin/*` durchgängig einen klaren Fehler statt
+ungeschützt erreichbar zu sein – die Funktion ist dann schlicht nicht nutzbar, nicht offen.
+
+### Schutz der Spezial-Kategorien
+
+`CategorizationService.ApplyCategorizationAsync` verankert drei Kategorienamen fest im Code
+(„Intern/Neutral", „Sonstige Einnahme", „Sonstige Ausgabe" – Vorzeichen-Fallback und interne
+Umbuchungserkennung hängen an genau diesen Namen). Die neuen CRUD-Endpunkte lehnen Löschen und
+Umbenennen dieser drei Kategorien serverseitig mit einer klaren Fehlermeldung ab (nicht nur im
+Frontend geprüft) – eine zentral gepflegte Liste dieser geschützten Namen wird sowohl von
+`CategorizationService` als auch von den neuen Endpunkten referenziert, um ein Auseinanderlaufen
+zu vermeiden.
+
+### Was dieses Konzept nicht abdeckt
+
+Bearbeitung der Konten-/Depot-Stammdaten, der `own_ibans`-Ableitung (kommt weiterhin automatisch
+aus `accounts.iban`) oder sonstiger Konfiguration – ausschließlich `categories` und
+`categorization_rules`, wie ursprünglich angefragt.
