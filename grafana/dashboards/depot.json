@@ -11,11 +11,36 @@
   "tags": ["comdirect-fetch"],
   "panels": [
     {
+      "id": 5,
+      "type": "piechart",
+      "title": "Asset-Allokation nach Anlageklasse (aktuellste Depotübersicht)",
+      "description": "Verteilung des Depotwerts nach Anlageklasse (comdirect instrument.staticData.instrumentType) zum letzten bekannten Stand - GitHub-Issue #4. Positionen ohne bekannten Typ (ältere, vor 0.15.0 gespeicherte Snapshots) laufen unter 'Unbekannt'.",
+      "gridPos": { "h": 12, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyEUR" },
+        "overrides": []
+      },
+      "options": {
+        "displayLabels": ["name", "percent"],
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  CASE pp.instrument_type\n    WHEN 'SHARE' THEN 'Aktie'\n    WHEN 'BONDS' THEN 'Anleihe'\n    WHEN 'SUBSCRIPTION_RIGHT' THEN 'Bezugsrecht'\n    WHEN 'ETF' THEN 'ETF'\n    WHEN 'PROFIT_PART_CERTIFICATE' THEN 'Genussschein'\n    WHEN 'FUND' THEN 'Fonds'\n    WHEN 'WARRANT' THEN 'Optionsschein'\n    WHEN 'CERTIFICATE' THEN 'Zertifikat'\n    ELSE 'Unbekannt'\n  END AS `Anlageklasse`,\n  SUM(pp.market_value) AS `Wert`\nFROM portfolio_positions pp\nWHERE pp.snapshot_id = (SELECT id FROM portfolio_snapshots ORDER BY recorded_at DESC LIMIT 1)\nGROUP BY `Anlageklasse`\nORDER BY `Wert` DESC"
+        }
+      ]
+    },
+    {
       "id": 1,
       "type": "piechart",
-      "title": "Asset-Allokation (aktuellste Depotübersicht)",
-      "description": "Verteilung des Depotwerts auf Einzelpositionen zum letzten bekannten Stand. Gruppierung nach Anlageklasse ist ein möglicher späterer Ausbau (KONZEPT.md Abschnitt 6, Phase 2).",
-      "gridPos": { "h": 12, "w": 10, "x": 0, "y": 0 },
+      "title": "Asset-Allokation je Einzelposition (aktuellste Depotübersicht)",
+      "description": "Verteilung des Depotwerts auf Einzelpositionen zum letzten bekannten Stand. Gruppierung nach Anlageklasse siehe Panel links (GitHub-Issue #4).",
+      "gridPos": { "h": 12, "w": 8, "x": 8, "y": 0 },
       "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
       "fieldConfig": {
         "defaults": { "unit": "currencyEUR" },
@@ -39,7 +64,7 @@
       "id": 2,
       "type": "table",
       "title": "Positionen aktuell (Tabelle)",
-      "gridPos": { "h": 12, "w": 14, "x": 10, "y": 0 },
+      "gridPos": { "h": 12, "w": 8, "x": 16, "y": 0 },
       "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
       "fieldConfig": {
         "defaults": {},
@@ -56,7 +81,7 @@
           "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT pp.display_name AS `Position`, pp.isin AS `ISIN`, pp.quantity AS `Stück`, pp.market_value AS `Wert`, pp.acquisition_value AS `Anschaffungswert`, pp.profit_loss AS `Gewinn/Verlust`\nFROM portfolio_positions pp\nWHERE pp.snapshot_id = (SELECT id FROM portfolio_snapshots ORDER BY recorded_at DESC LIMIT 1)\nORDER BY pp.market_value DESC"
+          "rawSql": "SELECT pp.display_name AS `Position`, pp.isin AS `ISIN`, pp.instrument_type AS `Anlageklasse`, pp.quantity AS `Stück`, pp.market_value AS `Wert`, pp.acquisition_value AS `Anschaffungswert`, pp.profit_loss AS `Gewinn/Verlust`\nFROM portfolio_positions pp\nWHERE pp.snapshot_id = (SELECT id FROM portfolio_snapshots ORDER BY recorded_at DESC LIMIT 1)\nORDER BY pp.market_value DESC"
         }
       ]
     },

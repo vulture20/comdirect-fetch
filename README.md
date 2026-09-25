@@ -184,8 +184,9 @@ alle mit echten Daten verifiziert:
   Konto plus Gesamtsumme, sowie Vermögensentwicklung (Konten + Depots kombiniert) mit
   Stat-Panels für die jeweils aktuellen Werte.
 - **`grafana/dashboards/depot.json`** – „Depot" (Phase 2): Asset-Allokation als
-  Kreisdiagramm, Positionstabelle, sowie Kurswert- und Gewinn/Verlust-Entwicklung je
-  Einzelposition über die Zeit.
+  Kreisdiagramm sowohl je Einzelposition als auch nach Anlageklasse gruppiert (Aktie/ETF/
+  Fonds/Zertifikat/… – Issue #4), Positionstabelle, sowie Kurswert- und
+  Gewinn/Verlust-Entwicklung je Einzelposition über die Zeit.
 - **`grafana/dashboards/cashflow.json`** – „Cashflow & Kosten" (Phase 3): Einnahmen/
   Ausgaben/Netto je Monat, Ausgaben nach Kategorie, Gebührenübersicht (Kontoführungs-/
   Ordergebühren). Interne Umbuchungen zwischen eigenen Konten sind ausgeschlossen.

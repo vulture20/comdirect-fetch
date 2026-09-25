@@ -4,6 +4,31 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.15.0 – Asset-Allokation nach Anlageklasse (Issue #4)
+
+`grafana/dashboards/depot.json` zeigte die Asset-Allokation bisher nur je Einzelposition. Klärung
+der offenen Frage aus `docs/konzept.md` Abschnitt 6 Phase 2 ("liefert comdirect eine brauchbare
+Anlageklassen-Zuordnung?"): **ja** – `instrument.staticData.instrumentType`
+(SHARE/BONDS/SUBSCRIPTION_RIGHT/ETF/PROFIT_PART_CERTIFICATE/FUND/WARRANT/CERTIFICATE/
+NOT_AVAILABLE), bereits mit dem ohnehin für ISIN/Name genutzten `with-attr=instrument`
+mitgeliefert – keine zusätzliche API-Anfrage nötig.
+
+- Neue Spalte `portfolio_positions.instrument_type`
+  (`db/migrations/0009_portfolio_positions_instrument_type.sql`) – NULL für vor dieser Version
+  gespeicherte Positionen.
+- `ComdirectFetch.Api.Instrument`/neues `StaticData` erweitert, `PortfolioFetchService` befüllt
+  das neue Feld beim Speichern.
+- `grafana/dashboards/depot.json`: neues Kreisdiagramm "Asset-Allokation nach Anlageklasse"
+  (deutsche Labels per SQL-`CASE`, z. B. "Aktie", "ETF", "Fonds", "Zertifikat") – bestehendes
+  Einzelpositions-Kreisdiagramm bleibt zusätzlich erhalten, beide nebeneinander; die Positionen-
+  Tabelle zeigt die Anlageklasse jetzt ebenfalls als Spalte.
+- 2 neue Unit-Tests für die neue JSON-Struktur (`Instrument.StaticData.InstrumentType`).
+
+Live verifiziert gegen die echte comdirect-API und das echte Depot: alle 21 Positionen korrekt
+klassifiziert (11 Aktien, 4 Zertifikate, 3 ETF, 3 Fonds, keine `NOT_AVAILABLE`/NULL), neues
+Dashboard-Panel per Grafana-`/api/ds/query` direkt gegen die echte DB getestet – korrekte Summen
+je Anlageklasse (z. B. Aktien 15.068,37 €).
+
 ## 0.14.0 – Aktive Benachrichtigung bei erforderlicher TAN-Freigabe (Issue #6)
 
 Bisher war eine abgelaufene comdirect-Session (Status "Freigabe erforderlich") nur passiv über

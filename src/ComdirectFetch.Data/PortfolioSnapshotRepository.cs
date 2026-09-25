@@ -25,9 +25,9 @@ public sealed class PortfolioSnapshotRepository(IDbConnectionFactory connectionF
         using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         const string sql = """
             INSERT INTO portfolio_positions
-                (snapshot_id, isin, wkn, display_name, quantity, market_value, acquisition_value, profit_loss, currency)
+                (snapshot_id, isin, wkn, instrument_type, display_name, quantity, market_value, acquisition_value, profit_loss, currency)
             VALUES
-                (@SnapshotId, @Isin, @Wkn, @DisplayName, @Quantity, @MarketValue, @AcquisitionValue, @ProfitLoss, @Currency);
+                (@SnapshotId, @Isin, @Wkn, @InstrumentType, @DisplayName, @Quantity, @MarketValue, @AcquisitionValue, @ProfitLoss, @Currency);
             """;
 
         await connection.ExecuteAsync(sql, positions);
