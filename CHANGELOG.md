@@ -4,6 +4,37 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.14.0 – Aktive Benachrichtigung bei erforderlicher TAN-Freigabe (Issue #6)
+
+Bisher war eine abgelaufene comdirect-Session (Status "Freigabe erforderlich") nur passiv über
+`comdirectctl.sh status`/`sync_log` sichtbar – man bemerkte das Problem erst beim zufälligen
+Nachschauen oder wenn in Grafana Datenlücken auffielen. Neue, komplett opt-in nutzbare
+Benachrichtigung über zwei unabhängige Kanäle, **beide gleichzeitig aktivierbar** ("auch
+parallel", wie gefordert):
+
+- **E-Mail** (`Notification__EmailSmtpHost/Port/User/Password/UseStartTls/From/To`) über
+  `System.Net.Mail.SmtpClient` (BCL, keine neue Paketabhängigkeit für diesen gelegentlichen,
+  niedrigvolumigen Anwendungsfall).
+- **Webhook** (`Notification__WebhookUrl`) – POST mit generischem JSON-Body, bewusst kein
+  dienstspezifisches Schema (funktioniert z. B. mit ntfy.sh, Home Assistant, n8n/Node-RED).
+
+Neues `ComdirectFetch.Worker.Services.NotificationService` spricht alle aktivierten Kanäle
+**gleichzeitig** an (`Task.WhenAll`, nicht nacheinander) – ein langsamer oder fehlschlagender
+Kanal blockiert die anderen nicht, ein Kanal-Fehler wird geloggt, aber nie an den Aufrufer
+durchgereicht. Ausgelöst in `ComdirectAuthCoordinator.RefreshAsync`, genau am Übergang nach
+`AuthState.NichtAuthentifiziert` (sowohl beim periodischen Token-Refresh als auch beim
+Wiederherstellungsversuch nach einem Neustart) – feuert dadurch genau einmal pro Ausfall, nicht
+bei jedem weiteren Intervall-Tick. Neuer `POST /debug/notify-test` /
+`comdirectctl.sh notify-test` zum gefahrlosen Testen der Konfiguration, ohne eine echte
+Session-Störung abwarten zu müssen.
+
+3 neue Unit-Tests für die Dispatch-Logik (nur aktivierte Kanäle ansprechen, alle parallel
+ansprechen trotz einzelnem Fehler, No-op ohne Konfiguration). Live verifiziert gegen echte
+Test-Endpunkte (ein selbstgebauter SMTP- und Webhook-Empfänger): beide Kanäle gleichzeitig
+konfiguriert, `POST /debug/notify-test` ausgelöst, E-Mail korrekt zugestellt (Betreff/Text mit
+Umlauten intakt) und Webhook-JSON-Payload korrekt empfangen – ohne bestehende Session/echte
+Zugangsdaten zu berühren.
+
 ## 0.13.1 – Umlaut-/Encoding-Bug in geloggten comdirect-Fehlertexten behoben (Issue #8)
 
 Fehlertexte von comdirect (z. B. bei HTTP 429 "Die erlaubte Anzahl der Anfragen ist

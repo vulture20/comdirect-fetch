@@ -127,6 +127,24 @@ oder einer längeren Downtime wieder nötig.
 - `./scripts/comdirectctl.sh fetch-now` bzw. `POST /debug/fetch-now` – stößt Salden-, Depotübersicht- und Umsatzabruf sofort an, statt auf die konfigurierten Intervalle zu warten.
 - `./scripts/comdirectctl.sh status` bzw. `GET /debug/summary` – Zeilenanzahl je Tabelle plus die letzten 10 `sync_log`-Einträge, zur schnellen Verifikation ohne direkten DB-Zugriff.
 - `./scripts/comdirectctl.sh consolidate` bzw. `POST /debug/consolidate` – stößt den Konsolidierungs-/Aufräumlauf sofort an (KONZEPT.md Abschnitt 11). Komplett opt-in: ohne gesetzte `Retention__*`-Zeiträume (siehe `.env.example`) ein no-op.
+- `./scripts/comdirectctl.sh notify-test` bzw. `POST /debug/notify-test` – löst eine Testbenachrichtigung über alle aktivierten Kanäle aus (siehe unten), ohne eine echte Session-Störung abwarten zu müssen.
+
+## Benachrichtigung bei erforderlicher TAN-Freigabe
+
+Bricht die Session-Refresh-Kette ab (Neustart, Downtime), wechselt der Status auf "Freigabe
+erforderlich" – standardmäßig nur passiv über `comdirectctl.sh status`/`sync_log` sichtbar.
+Optional, komplett opt-in und gleichzeitig nutzbar, zwei aktive Benachrichtigungskanäle (siehe
+`.env.example` für alle Variablen):
+
+- **E-Mail** – `Notification__EmailSmtpHost`, `-Port`, `-User`, `-Password`, `-UseStartTls`,
+  `-From`, `-To` (kommagetrennt bei mehreren Empfängern).
+- **Webhook** – `Notification__WebhookUrl`, POST mit generischem JSON-Body
+  (`{"event", "subject", "body", "occurredAt", "appVersion"}`), funktioniert z. B. mit
+  ntfy.sh, Home Assistant oder n8n/Node-RED.
+
+Beide Kanäle lassen sich gleichzeitig konfigurieren; ist keiner gesetzt, ändert sich nichts am
+bisherigen, rein passiven Verhalten. Konfiguration mit `./scripts/comdirectctl.sh notify-test`
+prüfen, bevor man sich darauf verlässt.
 
 ## ⚠️ TAN-Sperre – bitte unbedingt beachten
 

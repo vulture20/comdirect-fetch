@@ -96,14 +96,18 @@ Five projects under `src/`, referencing each other in one direction only
   services: `TokenRefreshBackgroundService` (keeps the session alive via refresh, runs far
   more often than the data-fetch intervals), `BalanceFetchService`,
   `PortfolioFetchService`, `TransactionFetchService` (calls `CategorizationService` after
-  inserting new transactions). Each fetch service exposes a public `RunOnceAsync` in
-  addition to its `BackgroundService` loop (which now runs once immediately on startup
-  instead of waiting a full interval first) — `RunOnceAsync` is what `POST /debug/fetch-now`
-  calls to trigger an immediate fetch without touching auth/session. `ComdirectAuthCoordinator`
-  holds auth state in memory only — a restart always requires a fresh TAN approval via
-  `POST /auth/start` then `POST /auth/confirm`. `GET /health` reports auth state and app
-  version; `GET /debug/summary` reports row counts per table and the last 10 `sync_log`
-  entries for quick verification without direct DB access.
+  inserting new transactions), `RetentionService` (v0.13.0, see below). Each fetch/maintenance
+  service exposes a public `RunOnceAsync` in addition to its `BackgroundService` loop (which now
+  runs once immediately on startup instead of waiting a full interval first) — `RunOnceAsync` is
+  what the matching `POST /debug/*` endpoint calls to trigger an immediate run without touching
+  auth/session. `ComdirectAuthCoordinator` keeps auth state in memory, with optional encrypted
+  persistence across restarts (v0.11.0, see below) — see "Known gaps" for exact behavior. On a
+  genuine transition to `NichtAuthentifiziert` (session lost, no valid persisted token to
+  restore), `NotificationService` (v0.14.0, Issue #6) fires once via whatever
+  `Notification__*` channels (email/webhook, both usable in parallel) are configured — opt-in,
+  no-op if unconfigured. `GET /health` reports auth state and app version; `GET /debug/summary`
+  reports row counts per table and the last 10 `sync_log` entries for quick verification without
+  direct DB access.
 - **`ComdirectFetch.Tests`** — xUnit; covers `CategorizationLogic`, `ComdirectResilience`
   (via a fake `HttpMessageHandler`, using a short-delay pipeline from `BuildPipeline` so
   retry tests don't wait on real backoff), and the banking DTO JSON quirks.
