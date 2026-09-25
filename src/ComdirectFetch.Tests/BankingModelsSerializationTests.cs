@@ -55,4 +55,32 @@ public class BankingModelsSerializationTests
 
         Assert.Equal(new DateOnly(2026, 2, 20), transaction.BookingDate);
     }
+
+    [Fact]
+    public void Instrument_liest_InstrumentType_aus_verschachteltem_StaticData_Objekt()
+    {
+        // Struktur laut offizieller Swagger-Doku (GitHub-Issue #4): instrument.staticData.instrumentType.
+        var json = """
+            {
+                "isin": "IE00B4L5Y983",
+                "wkn": "A0RPWH",
+                "name": "iShares Core MSCI World UCITS ETF",
+                "staticData": {"instrumentType": "ETF", "notation": "XXC"}
+            }
+            """;
+
+        var instrument = JsonSerializer.Deserialize<Instrument>(json)!;
+
+        Assert.Equal("ETF", instrument.StaticData?.InstrumentType);
+    }
+
+    [Fact]
+    public void Instrument_ohne_StaticData_liefert_null_InstrumentType()
+    {
+        var json = """{"isin": "IE00B4L5Y983", "name": "Test"}""";
+
+        var instrument = JsonSerializer.Deserialize<Instrument>(json)!;
+
+        Assert.Null(instrument.StaticData);
+    }
 }

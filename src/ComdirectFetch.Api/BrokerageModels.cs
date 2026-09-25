@@ -72,4 +72,20 @@ public sealed class Instrument
 
     [JsonPropertyName("name")]
     public string? Name { get; init; }
+
+    /// <summary>Kommt bereits mit with-attr=instrument mit, kein weiteres with-attr nötig (GitHub-Issue #4).</summary>
+    [JsonPropertyName("staticData")]
+    public StaticData? StaticData { get; init; }
+}
+
+/// <summary>Nur die für dieses Projekt relevanten Felder aus dem offiziellen StaticData-Schema.</summary>
+public sealed class StaticData
+{
+    /// <summary>
+    /// Enum-String laut offizieller Doku: SHARE, BONDS, SUBSCRIPTION_RIGHT, ETF,
+    /// PROFIT_PART_CERTIFICATE, FUND, WARRANT, CERTIFICATE, NOT_AVAILABLE. Bewusst als string statt
+    /// C#-Enum modelliert - comdirect kann diese Liste jederzeit erweitern, ohne dass wir das vorher wissen.
+    /// </summary>
+    [JsonPropertyName("instrumentType")]
+    public string? InstrumentType { get; init; }
 }

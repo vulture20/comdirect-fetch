@@ -86,6 +86,7 @@ public sealed class PortfolioFetchService(
                     SnapshotId = snapshotId,
                     Isin = p.Instrument?.Isin,
                     Wkn = p.Wkn ?? p.Instrument?.Wkn,
+                    InstrumentType = p.Instrument?.StaticData?.InstrumentType,
                     DisplayName = p.Instrument?.Name ?? p.Wkn ?? "unbekannt",
                     Quantity = p.Quantity.Value,
                     MarketValue = p.CurrentValue.Value,
