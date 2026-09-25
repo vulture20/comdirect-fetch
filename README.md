@@ -32,10 +32,14 @@ chmod 600 secrets/Comdirect__ClientId secrets/Comdirect__ClientSecret
 
 # 2. Dedizierten Schlüssel für die Zugangsnummer/PIN-Verschlüsselung erzeugen - bewusst
 #    außerhalb dieses Projektverzeichnisses, damit er nicht dieselbe Exposition wie .env hat:
-sudo mkdir -p /etc/comdirect-fetch
-openssl rand 32 | sudo tee /etc/comdirect-fetch/credential.key > /dev/null
-sudo chmod 400 /etc/comdirect-fetch/credential.key
+./scripts/comdirectctl.sh generate-bootstrap-key
+# Standardpfad /etc/comdirect-fetch/credential.key (überschreibbar per Argument), chmod 400.
+# Bricht bewusst ab, falls dort schon ein Schlüssel liegt.
 ```
+
+Auch der Schlüssel für die Session-Token-Persistierung (`Comdirect__TokenEncryptionKeyBase64`,
+siehe unten) lässt sich so erzeugen: `./scripts/comdirectctl.sh generate-token-key` gibt einen
+zufälligen Base64-Schlüssel aus, der manuell in `.env` einzutragen ist.
 
 Danach Container (neu) starten und Zugangsnummer/PIN einmalig per Bootstrap-Schritt verschlüsselt
 ablegen:

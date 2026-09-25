@@ -3,7 +3,7 @@
 # Diensts (siehe README.md, docs/konzept.md Abschnitt 3). Läuft auf dem Host, nicht im
 # Container, und spricht den Dienst über seine HTTP-API an.
 #
-# Voraussetzungen: curl, jq
+# Voraussetzungen: curl, jq, openssl
 # Basis-URL per Umgebungsvariable COMDIRECT_FETCH_URL überschreibbar
 # (Standard: http://localhost:8750, siehe docker/docker-compose.yml).
 
@@ -34,6 +34,8 @@ Verwendung:
   ${SCRIPT_NAME} fetch-now
   ${SCRIPT_NAME} recategorize
   ${SCRIPT_NAME} set-credentials
+  ${SCRIPT_NAME} generate-token-key
+  ${SCRIPT_NAME} generate-bootstrap-key [PFAD]
   ${SCRIPT_NAME} help
 
 Befehle:
@@ -59,6 +61,18 @@ Befehle:
                   (POST /admin/credentials). Erfordert eine konfigurierte Schlüsseldatei
                   (Comdirect__CredentialKeyFilePath) auf dem Dienst. Danach können
                   Comdirect__Username/Comdirect__Password aus .env entfernt werden.
+  generate-token-key
+                  Erzeugt einen zufälligen Base64-32-Byte-AES-256-Schlüssel für
+                  Comdirect__TokenEncryptionKeyBase64 (KONZEPT.md Abschnitt 3/9,
+                  Session-Token-Persistierung) und gibt ihn aus - schreibt NICHT
+                  automatisch in .env, berührt keine laufende Session.
+  generate-bootstrap-key [PFAD]
+                  Erzeugt die dedizierte Schlüsseldatei für den Bootstrap-Mechanismus
+                  (KONZEPT.md Abschnitt 10 B, Comdirect__CredentialKeyFilePath) mit
+                  32 zufälligen Bytes, chmod 400. PFAD Standard:
+                  /etc/comdirect-fetch/credential.key. Bricht ab, wenn dort schon eine
+                  Datei liegt (ein bereits per set-credentials verschlüsselter Wert
+                  wäre mit einem neuen Schlüssel nicht mehr entschlüsselbar).
   help            Diese Hilfe anzeigen.
 
 Umgebungsvariable COMDIRECT_FETCH_URL überschreibt die Basis-URL
@@ -73,7 +87,7 @@ EOF
 
 require_deps() {
   local missing=()
-  for cmd in curl jq; do
+  for cmd in curl jq openssl; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
   done
   if [[ ${#missing[@]} -gt 0 ]]; then
@@ -235,6 +249,50 @@ cmd_set_credentials() {
   echo "-> Jetzt Comdirect__Username/Comdirect__Password aus .env entfernen (siehe README.md)."
 }
 
+# Reiner Lokalbefehl, berührt weder den Dienst noch eine laufende Session (KONZEPT.md
+# Abschnitt 3/9). Gibt den Schlüssel nur aus statt ihn automatisch in .env zu schreiben, damit
+# .env nicht ungefragt verändert wird - das Einfügen bleibt bewusst ein manueller Schritt.
+cmd_generate_token_key() {
+  local key
+  key="$(openssl rand -base64 32)"
+
+  echo "Neuer Schlüssel für Comdirect__TokenEncryptionKeyBase64:"
+  echo
+  echo "  ${key}"
+  echo
+  echo "In .env eintragen (vorhandenen Wert ersetzen) und den Container neu starten."
+  echo "ACHTUNG: ein mit dem alten Schlüssel bereits persistierter Session-Token lässt sich"
+  echo "danach nicht mehr entschlüsseln - der Dienst verhält sich dann einmalig wie ohne"
+  echo "Persistierung (neue TAN-Freigabe nötig), bis er mit dem neuen Schlüssel erneut einen"
+  echo "Token ablegt."
+}
+
+# Reiner Lokalbefehl, schreibt eine Datei auf dem Host außerhalb des Projektverzeichnisses
+# (KONZEPT.md Abschnitt 10 B). Bricht bewusst ab, wenn dort schon eine Datei liegt, statt sie
+# stillschweigend zu überschreiben - siehe Warnung im Hilfetext.
+cmd_generate_bootstrap_key() {
+  local path="${1:-/etc/comdirect-fetch/credential.key}"
+
+  if [[ -e "$path" ]]; then
+    echo "Fehler: ${path} existiert bereits - wird nicht überschrieben." >&2
+    echo "Ein bereits per '${SCRIPT_NAME} set-credentials' verschlüsselter Wert in" >&2
+    echo "credential_store wäre mit einem neuen Schlüssel nicht mehr entschlüsselbar." >&2
+    echo "Zum bewussten Ersetzen die Datei vorher manuell löschen/verschieben." >&2
+    exit 1
+  fi
+
+  mkdir -p "$(dirname -- "$path")"
+  # Rohe 32 Bytes, kein Base64 - Datei statt Env-Var (KONZEPT.md Abschnitt 10 B).
+  (umask 077 && openssl rand 32 > "$path")
+  chmod 400 "$path"
+
+  echo "Neuer Bootstrap-Schlüssel erzeugt: ${path} (chmod 400)."
+  echo "In docker/docker-compose.yml als Bind-Mount-Quelle für /run/secrets/credential_key"
+  echo "verwenden (Standardpfad passt bereits, siehe README.md). Danach:"
+  echo "  ${SCRIPT_NAME} set-credentials"
+  echo "aufrufen, um Zugangsnummer/PIN damit verschlüsselt abzulegen."
+}
+
 require_deps
 
 case "${1:-help}" in
@@ -254,6 +312,8 @@ case "${1:-help}" in
   fetch-now) cmd_fetch_now ;;
   recategorize) cmd_recategorize ;;
   set-credentials) cmd_set_credentials ;;
+  generate-token-key) cmd_generate_token_key ;;
+  generate-bootstrap-key) shift || true; cmd_generate_bootstrap_key "${1:-}" ;;
   help|-h|--help) usage ;;
   *) echo "Unbekannter Befehl: ${1}. Siehe '${SCRIPT_NAME} help'." >&2; exit 64 ;;
 esac
