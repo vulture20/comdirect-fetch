@@ -4,6 +4,38 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.13.0 – Konsolidierungs- und Aufräumprozess für Zeitreihen-Daten (docs/konzept.md Abschnitt 11)
+
+`account_balances` und `portfolio_snapshots`/`portfolio_positions` wuchsen mit jedem
+Abrufintervall unbegrenzt (bei Standard-Intervallen ~288 Salden-Zeilen/Tag bei 3 Konten, ~500–700
+Positions-Zeilen/Tag), `sync_log` ähnlich mit jedem Abrufversuch – kein Aufräum-Mechanismus
+existierte bisher. Neuer `ComdirectFetch.Worker.Services.RetentionService`
+(`BackgroundService`, täglich, auch manuell über `POST /debug/consolidate` bzw.
+`comdirectctl.sh consolidate` anstoßbar):
+
+- **Konsolidierung**: `account_balances`/`portfolio_snapshots` werden nach einer konfigurierbaren
+  Rohdaten-Frist (`Retention__RawDataRetentionDays`) auf eine Zeile pro Tag reduziert – behalten
+  wird der zeitlich letzte Wert des Tages (`ComdirectFetch.Data.RetentionRepository`, `DELETE …
+  WHERE id <> MAX(id) je (account_id|portfolio_id, Tag)`). `portfolio_positions` der wegfallenden
+  Snapshots werden im selben Zug mitgelöscht (Fremdschlüssel).
+- **Optionale Löschung**: zusätzlich `Retention__ConsolidatedDataRetentionDays` gesetzt, werden
+  bereits konsolidierte Zeilen nach einer weiteren Frist komplett gelöscht (Gesamtalter =
+  Rohdaten-Frist + diese Frist).
+- **`sync_log`**: separate, einfachere Politik ohne Konsolidierung –
+  `Retention__SyncLogRetentionDays` löscht alte Zeilen direkt.
+- **`transactions` bleibt bewusst unangetastet** – Finanz-Ledger, nie konsolidieren/löschen.
+- **Komplett opt-in**: ohne gesetzte `Retention__*`-Zeiträume tut der Dienst nichts (kein
+  `sync_log`-Eintrag, kein Rauschen) – heutiges Verhalten bleibt für bestehende Deployments exakt
+  erhalten, analog zu `TokenEncryptionKeyBase64`/`CredentialKeyFilePath`.
+- Jeder Lauf wird als `sync_log`-Eintrag protokolliert (neuer `data_kind`-Wert `Konsolidierung`,
+  `db/migrations/0008_sync_log_add_konsolidierung.sql`), inkl. Zusammenfassung der
+  konsolidierten/gelöschten Zeilenzahlen im Feld `error_message` (auch bei Erfolg) – damit über
+  `GET /debug/summary`/`comdirectctl.sh status` nachvollziehbar, ohne direkten DB-Zugriff.
+
+Live verifiziert: mit aggressiv kurzen Testwerten (`RawDataRetentionDays=0`) gegen die echte DB
+laufen lassen, Konsolidierung auf 1 Zeile/Tag je Konto/Depot bestätigt, `sync_log`-Eintrag mit
+korrekter Zusammenfassung geprüft, `transactions` unverändert.
+
 ## 0.12.0 – Sichere Ablage der comdirect-Zugangsdaten (docs/konzept.md Abschnitt 10)
 
 Client-ID, Client-Secret, Zugangsnummer und PIN lagen bisher ausschließlich als Klartext in

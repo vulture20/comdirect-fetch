@@ -15,6 +15,7 @@ builder.Configuration.AddKeyPerFile("/run/secrets", optional: true);
 builder.Services.Configure<ComdirectApiOptions>(builder.Configuration.GetSection(ComdirectApiOptions.SectionName));
 builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.SectionName));
 builder.Services.Configure<FetchOptions>(builder.Configuration.GetSection(FetchOptions.SectionName));
+builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));
 
 builder.Services.AddSingleton<ComdirectRequestContext>();
 builder.Services.AddSingleton<CredentialProvider>();
@@ -41,6 +42,7 @@ builder.Services.AddSingleton<SyncLogRepository>();
 builder.Services.AddSingleton<DiagnosticsRepository>();
 builder.Services.AddSingleton<AuthTokenRepository>();
 builder.Services.AddSingleton<CredentialRepository>();
+builder.Services.AddSingleton<RetentionRepository>();
 builder.Services.AddSingleton<CategorizationService>();
 
 builder.Services.AddHostedService<TokenRefreshBackgroundService>();
@@ -53,6 +55,8 @@ builder.Services.AddSingleton<PortfolioFetchService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<PortfolioFetchService>());
 builder.Services.AddSingleton<TransactionFetchService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<TransactionFetchService>());
+builder.Services.AddSingleton<RetentionService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RetentionService>());
 
 var app = builder.Build();
 
@@ -152,6 +156,15 @@ app.MapPost("/admin/credentials", async (CredentialProvider credentials, SetCred
     }
 
     return Results.Ok(new { Message = "Zugangsnummer/PIN verschlüsselt gespeichert. .env kann jetzt bereinigt werden." });
+});
+
+// KONZEPT.md Abschnitt 11: stößt Konsolidierung/Aufräumen sofort an, statt auf das konfigurierte
+// Intervall zu warten. Komplett opt-in (siehe RetentionOptions) - ohne gesetzte Retention__*-
+// Zeiträume ist das ein no-op. Berührt weder Session noch TAN, gefahrlos wiederholbar.
+app.MapPost("/debug/consolidate", async (RetentionService retention, CancellationToken ct) =>
+{
+    await retention.RunOnceAsync(ct);
+    return Results.Ok(new { Message = "Konsolidierung/Aufräumen angestoßen, siehe sync_log für Details." });
 });
 
 app.Run();

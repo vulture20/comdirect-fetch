@@ -187,12 +187,24 @@ Do this as part of the change itself, not only when the user asks for it.
   resolved at call time, not at DI-container-build time. Everything here is opt-in with a
   transparent fallback to `.env`/`ComdirectApiOptions` if the key file or DB row is absent — no
   forced migration for deployments that don't set this up.
-- No retention/cleanup process exists yet — `account_balances`, `portfolio_snapshots`/
-  `portfolio_positions`, and `sync_log` grow forever. A design is written up in
-  `docs/konzept.md` §11 (opt-in daily consolidation for balances/snapshots down to one row/day
-  after a configurable raw-data period, optional full deletion after a further period; simple
-  age-based deletion for `sync_log`; `transactions` deliberately untouched — it's the financial
-  ledger) — concept only, not yet implemented.
+- Retention/cleanup (v0.13.0, `docs/konzept.md` §11): `ComdirectFetch.Worker.Services.
+  RetentionService` (`BackgroundService`, daily, also `POST /debug/consolidate` /
+  `comdirectctl.sh consolidate`) consolidates `account_balances`/`portfolio_snapshots` (+
+  `portfolio_positions`) down to one row/day once a row's day is older than
+  `Retention__RawDataRetentionDays`, keeping the day's last value (`ComdirectFetch.Data.
+  RetentionRepository` — cross-cutting like `DiagnosticsRepository`, deliberately not
+  "one repo per table"); optionally fully deletes already-consolidated rows after an additional
+  `Retention__ConsolidatedDataRetentionDays`. `sync_log` gets its own simpler age-based deletion
+  via `Retention__SyncLogRetentionDays`, no consolidation stage. `transactions` is never touched
+  — it's the financial ledger. All three thresholds are opt-in (unset = today's forever-keep
+  behavior, matching the `TokenEncryptionKeyBase64`/`CredentialKeyFilePath` pattern); each run
+  logs to `sync_log` (new `data_kind` `Konsolidierung`,
+  `db/migrations/0008_sync_log_add_konsolidierung.sql`) with a row-count summary in
+  `error_message` even on success (pragmatic reuse of that column instead of a schema change).
+  No DB transactions (matches the rest of this codebase) — all operations are idempotent, so a
+  crash mid-run just gets caught up by the next run. Live-verified against the real DB using
+  synthetic rows dated years outside the real data's range, confirming both consolidation and
+  deletion work correctly and real data is never touched.
 - Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
   — check there first before guessing at API behavior, but confirm against a real request
   when in doubt: the docs have been wrong before (see above).

@@ -227,12 +227,13 @@ Diese Pflege übernimmt Claude Code während der Entwicklung selbstständig als 
   Bootstrap-und-Wipe-Flow mit dediziertem, dateibasiertem Schlüssel für Zugangsnummer/PIN.
   Bewusst zu unterscheiden vom bereits umgesetzten Punkt oben (der betrifft den Session-Token,
   nicht diese vier Werte). Live verifiziert. Erledigt.
-- **Konsolidierungs- und Aufräumprozess für Zeitreihen-Daten** (Abschnitt 11): Konzept steht
-  (Abschnitt 11) – Salden/Depot-Snapshots werden nach einer konfigurierbaren Rohdaten-Frist auf
-  einen Wert/Tag konsolidiert, `sync_log` nach einer separaten Frist gelöscht, Kontoumsätze
+- **Konsolidierungs- und Aufräumprozess für Zeitreihen-Daten** (Abschnitt 11): umgesetzt (siehe
+  `CHANGELOG.md` 0.13.0) – Salden/Depot-Snapshots werden nach einer konfigurierbaren Rohdaten-Frist
+  auf einen Wert/Tag konsolidiert, `sync_log` nach einer separaten Frist gelöscht, Kontoumsätze
   (`transactions`) bewusst nie angefasst. Beides komplett opt-in (nichts passiert ohne explizit
-  gesetzte Zeiträume), automatisch per neuem Hintergrunddienst plus manuell auslösbar. Noch nicht
-  umgesetzt – Umsetzung folgt auf expliziten Zuruf.
+  gesetzte Zeiträume), automatisch per neuem Hintergrunddienst plus manuell auslösbar. Live
+  verifiziert (synthetische Testdaten weit außerhalb des echten Datenbestands, echte Daten dabei
+  nachweislich unangetastet). Erledigt.
 
 ## 10. Sichere Ablage der comdirect-Zugangsdaten (umgesetzt in 0.12.0)
 
@@ -331,7 +332,7 @@ Host, sowie jemand mit direktem Lesezugriff auf die neue Schlüsseldatei selbst 
 außerhalb des hier beschriebenen Schutzes und müsste, falls relevant, über Host-seitige Maßnahmen
 (z. B. LUKS) abgedeckt werden.
 
-## 11. Konsolidierungs- und Aufräumprozess für Zeitreihen-Daten (Konzept, noch nicht umgesetzt)
+## 11. Konsolidierungs- und Aufräumprozess für Zeitreihen-Daten (umgesetzt in 0.13.0)
 
 **Ausgangslage**: `account_balances` und `portfolio_snapshots` (+ `portfolio_positions`) wachsen
 mit jedem Abrufintervall unbegrenzt weiter (Standard-Intervalle: Salden alle 15 Minuten, Depot
@@ -339,7 +340,7 @@ stündlich – bei 3 Konten macht das rund 288 Salden-Zeilen/Tag, plus je nach P
 500–700 Positions-Zeilen/Tag). `sync_log` wächst mit jedem Abrufversuch aller Datenarten ähnlich
 schnell. Auf Dauer (Monate/Jahre) summiert sich das zu erheblichem, größtenteils redundantem
 Datenvolumen, ohne dass die volle Auflösung für Langzeit-Trends in Grafana tatsächlich gebraucht
-wird. Es gibt aktuell keinerlei Aufräum-Mechanismus – alles wird für immer aufbewahrt.
+wird. Bis 0.13.0 gab es keinerlei Aufräum-Mechanismus – alles wurde für immer aufbewahrt.
 
 **Bewusst außerhalb des Umfangs**: `transactions` (das Finanz-Ledger – einzelne, unveränderliche
 Buchungen, u. U. steuerlich relevant; "konsolidieren" würde hier echte Daten verfälschen oder
@@ -367,7 +368,7 @@ verlieren) sowie alle übrigen Tabellen (`accounts`, `portfolios`, `categories`,
 Analog zu `Comdirect__TokenEncryptionKeyBase64`/`Comdirect__CredentialKeyFilePath` (Abschnitt 9/10):
 ohne explizit gesetzte Zeiträume passiert nichts, das heutige Verhalten (alles wird für immer
 aufbewahrt) bleibt für bestehende Deployments unverändert. Drei unabhängige, optionale Zeiträume
-(Vorschlag, Name in der technischen Umsetzung final festzulegen):
+(`src/ComdirectFetch.Worker/RetentionOptions.cs`):
 
 - `Retention__RawDataRetentionDays` – Rohdaten-Frist für `account_balances`/`portfolio_snapshots`.
   Nicht gesetzt: keine Konsolidierung, aktuelles Verhalten bleibt bestehen.
@@ -379,22 +380,26 @@ aufbewahrt) bleibt für bestehende Deployments unverändert. Drei unabhängige, 
 
 ### Auslösung
 
-Neuer `BackgroundService` (analog zu `BalanceFetchService`/`PortfolioFetchService`/
-`TransactionFetchService`), läuft automatisch in einem eigenen, seltenen Intervall (Vorschlag:
-täglich, `Retention__IntervalSeconds`). Wie die bestehenden Fetch-Dienste zusätzlich als
-konkreter Singleton registriert, damit ein manueller Anstoß ohne Warten auf das Intervall möglich
-ist – neuer Endpoint (Vorschlag: `POST /debug/consolidate`, analog zu `/debug/recategorize`) plus
-neuer `comdirectctl.sh`-Unterbefehl. Berührt weder Session noch TAN.
+`ComdirectFetch.Worker.Services.RetentionService` (`BackgroundService`, analog zu
+`BalanceFetchService`/`PortfolioFetchService`/`TransactionFetchService`), läuft automatisch in
+einem eigenen, seltenen Intervall (Standard: täglich, `Retention__IntervalSeconds`). Wie die
+bestehenden Fetch-Dienste zusätzlich als konkreter Singleton registriert, damit ein manueller
+Anstoß ohne Warten auf das Intervall möglich ist – `POST /debug/consolidate` (analog zu
+`/debug/recategorize`) plus `comdirectctl.sh consolidate`. Berührt weder Session noch TAN.
 
 ### Sicherheit/Nachvollziehbarkeit
 
-- Jeder Lauf wird wie die bestehenden Abrufe in `sync_log` protokolliert (neuer `data_kind`-Wert,
-  z. B. `Konsolidierung` – erfordert eine neue, append-only Migration zur Erweiterung des
-  bestehenden ENUM), inklusive Anzahl konsolidierter/gelöschter Zeilen – damit über
-  `GET /debug/summary`/`comdirectctl.sh status` nachvollziehbar, ohne direkten DB-Zugriff.
-- Konsolidierung und Löschung laufen je Tabelle/Tagesbatch in einer Transaktion, um keine
-  inkonsistenten Zwischenzustände zu hinterlassen. Positionszeilen werden vor ihrem
-  Snapshot-Datensatz gelöscht (Fremdschlüssel-Reihenfolge).
+- Jeder Lauf wird wie die bestehenden Abrufe in `sync_log` protokolliert (neuer `data_kind`-Wert
+  `Konsolidierung`, `db/migrations/0008_sync_log_add_konsolidierung.sql`), inklusive einer
+  Zusammenfassung der konsolidierten/gelöschten Zeilenzahlen im Feld `error_message` (auch bei
+  Erfolg, trotz des Feldnamens – pragmatische Wiederverwendung statt Schemaänderung nur für diesen
+  Zweck) – damit über `GET /debug/summary`/`comdirectctl.sh status` nachvollziehbar, ohne
+  direkten DB-Zugriff.
+- Konsolidierung und Löschung laufen NICHT in einer expliziten DB-Transaktion (wie der Rest
+  dieses Projekts, siehe `RetentionRepository`) – alle Operationen sind idempotent, ein Absturz
+  zwischen zwei Schritten hinterlässt keinen dauerhaft inkonsistenten Zustand, da ein erneuter
+  Lauf ihn einfach nachholt. Positionszeilen werden dabei immer vor ihrem Snapshot-Datensatz
+  gelöscht (Fremdschlüssel-Reihenfolge).
 
 ### Auswirkung auf Grafana
 

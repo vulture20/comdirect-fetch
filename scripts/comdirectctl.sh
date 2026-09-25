@@ -33,6 +33,7 @@ Verwendung:
   ${SCRIPT_NAME} auth confirm [TAN_CODE]
   ${SCRIPT_NAME} fetch-now
   ${SCRIPT_NAME} recategorize
+  ${SCRIPT_NAME} consolidate
   ${SCRIPT_NAME} set-credentials
   ${SCRIPT_NAME} generate-token-key
   ${SCRIPT_NAME} generate-bootstrap-key [PFAD]
@@ -55,6 +56,10 @@ Befehle:
                   neu einordnen (POST /debug/recategorize), z. B. nach einer Erweiterung
                   oder Korrektur der Kategorisierungsregeln. Berührt keine Session/TAN,
                   gefahrlos wiederholbar; manuelle Zuordnungen bleiben unverändert.
+  consolidate     Konsolidierungs-/Aufräumlauf sofort anstoßen (POST /debug/consolidate,
+                  KONZEPT.md Abschnitt 11), ohne auf das konfigurierte Intervall zu warten.
+                  Komplett opt-in - ohne gesetzte Retention__*-Zeiträume ein no-op. Berührt
+                  keine Session/TAN, gefahrlos wiederholbar; transactions wird nie angefasst.
   set-credentials Bootstrap-Schritt (KONZEPT.md Abschnitt 10 B): fragt Zugangsnummer/PIN
                   interaktiv ab (PIN nicht auf dem Bildschirm sichtbar, nicht als
                   Kommandozeilenargument) und legt sie verschlüsselt in der DB ab
@@ -214,6 +219,16 @@ cmd_recategorize() {
   echo "$HTTP_BODY" | jq -r '.message'
 }
 
+cmd_consolidate() {
+  http_request POST /debug/consolidate
+  if [[ "$HTTP_CODE" != "200" ]]; then
+    echo "Fehler (HTTP ${HTTP_CODE}): ${HTTP_BODY}" >&2
+    exit 1
+  fi
+  echo "$HTTP_BODY" | jq -r '.message'
+  echo "Details: ${SCRIPT_NAME} status"
+}
+
 # Bootstrap-Schritt für Zugangsnummer/PIN (KONZEPT.md Abschnitt 10 B). PIN bewusst per "read -s"
 # abgefragt statt als Argument, damit sie weder im Terminal sichtbar noch in der Shell-History/
 # Prozessliste (ps) landet.
@@ -311,6 +326,7 @@ case "${1:-help}" in
     ;;
   fetch-now) cmd_fetch_now ;;
   recategorize) cmd_recategorize ;;
+  consolidate) cmd_consolidate ;;
   set-credentials) cmd_set_credentials ;;
   generate-token-key) cmd_generate_token_key ;;
   generate-bootstrap-key) shift || true; cmd_generate_bootstrap_key "${1:-}" ;;

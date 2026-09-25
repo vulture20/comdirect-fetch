@@ -126,6 +126,7 @@ oder einer längeren Downtime wieder nötig.
 **Test-/Betriebshilfen** (berühren keine Session/TAN, gefahrlos wiederholbar):
 - `./scripts/comdirectctl.sh fetch-now` bzw. `POST /debug/fetch-now` – stößt Salden-, Depotübersicht- und Umsatzabruf sofort an, statt auf die konfigurierten Intervalle zu warten.
 - `./scripts/comdirectctl.sh status` bzw. `GET /debug/summary` – Zeilenanzahl je Tabelle plus die letzten 10 `sync_log`-Einträge, zur schnellen Verifikation ohne direkten DB-Zugriff.
+- `./scripts/comdirectctl.sh consolidate` bzw. `POST /debug/consolidate` – stößt den Konsolidierungs-/Aufräumlauf sofort an (KONZEPT.md Abschnitt 11). Komplett opt-in: ohne gesetzte `Retention__*`-Zeiträume (siehe `.env.example`) ein no-op.
 
 ## ⚠️ TAN-Sperre – bitte unbedingt beachten
 
