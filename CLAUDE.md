@@ -16,7 +16,7 @@ architectural changes, it's the source of truth this code was built from.
 dotnet build                                                # build the whole solution
 dotnet test                                                 # run all tests
 dotnet test --filter FullyQualifiedName~CategorizationLogicTests   # run a single test class
-docker compose -f docker/docker-compose.yml up fetch --build      # run just the fetch service
+docker compose -f docker/docker-compose.yml up --build       # run the fetch service (only service in the compose file)
 ```
 
 There's no separate lint step; `dotnet build` surfaces nullable-reference and compiler warnings.
@@ -30,18 +30,18 @@ to see them) — not an isolated sandbox. Two things that already bit us once:
   instead (`docker/docker-compose.yml`). Always check `docker ps` / `ss -tlnp` for conflicts
   before picking a host port for anything new here.
 - **There's already a Grafana instance on this host** (container name `grafana`, port 3000,
-  org "BugZone"). Don't start a second one from `docker/docker-compose.yml`'s optional
-  `grafana` service on this host — both comdirect-fetch dashboards (`grafana/dashboards/
-  salden.json`, uid `comdirect-salden`; `grafana/dashboards/depot.json`, uid
-  `comdirect-depot`) were provisioned into the *existing* instance via its HTTP API instead
-  (`POST /api/dashboards/db` with `overwrite: true`, datasource uid `comdirect-mariadb`),
-  using a Grafana service-account token the user provided (Admin role — Editor role can't
-  create datasources, that's a Grafana permission, not a bug). After editing either
-  dashboard JSON, re-push it the same way rather than editing in the Grafana UI (which
-  `allowUiUpdates: false` in the provisioning config also discourages for the *provisioned*
-  path — irrelevant for this host's API-based path, but keep JSON-as-source-of-truth either
-  way). `grafana/provisioning/` and the `grafana` compose service remain useful as the
-  self-contained path for a *fresh* environment without a pre-existing Grafana.
+  org "BugZone"). This project does **not** run its own Grafana container — there's no
+  `grafana` service in `docker/docker-compose.yml` and no `grafana/provisioning/` directory
+  (an earlier "self-contained deployment" version of both existed briefly and was removed
+  again as speculative complexity for a hypothetical fresh install without existing Grafana —
+  don't re-add either without the user asking). Both comdirect-fetch dashboards
+  (`grafana/dashboards/salden.json`, uid `comdirect-salden`; `grafana/dashboards/depot.json`,
+  uid `comdirect-depot`) live in this repo as their source of truth and are provisioned into
+  the *existing* Grafana instance via its HTTP API (`POST /api/dashboards/db` with
+  `overwrite: true`, datasource uid `comdirect-mariadb`), using a Grafana service-account
+  token the user provided (Admin role — Editor role can't create datasources, that's a
+  Grafana permission, not a bug). After editing either dashboard JSON, re-push it the same
+  way rather than editing in the Grafana UI.
 
 ## Architecture
 
