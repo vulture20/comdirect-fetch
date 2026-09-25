@@ -1,0 +1,129 @@
+{
+  "uid": "comdirect-cashflow",
+  "title": "comdirect-fetch: Cashflow & Kosten",
+  "description": "Ein-/Ausgaben je Zeitraum, Ausgaben nach Kategorie, Gebührenübersicht – KONZEPT.md Abschnitt 6, Phase 3. Interne Umbuchungen zwischen eigenen Konten sind ausgeschlossen (category type InternNeutral).",
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "browser",
+  "time": { "from": "now-6M", "to": "now" },
+  "refresh": "5m",
+  "tags": ["comdirect-fetch"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "barchart",
+      "title": "Einnahmen, Ausgaben und Netto je Monat",
+      "description": "Summe je Kategorie-Typ (Einnahme/Ausgabe) und Buchungsmonat, plus Netto (Einnahme − Ausgabe). Interne Umbuchungen ausgeschlossen.",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyEUR" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Netto" },
+            "properties": [{ "id": "custom.drawStyle", "value": "line" }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT CAST(DATE_FORMAT(t.booking_date, '%Y-%m-01') AS DATE) AS time, c.type AS metric, SUM(t.amount) AS value\nFROM transactions t\nJOIN categories c ON c.id = t.category_id\nWHERE c.type IN ('Einnahme', 'Ausgabe') AND $__timeFilter(t.booking_date)\nGROUP BY DATE_FORMAT(t.booking_date, '%Y-%m-01'), c.type\nUNION ALL\nSELECT CAST(DATE_FORMAT(t.booking_date, '%Y-%m-01') AS DATE) AS time, 'Netto' AS metric, SUM(t.amount) AS value\nFROM transactions t\nJOIN categories c ON c.id = t.category_id\nWHERE c.type IN ('Einnahme', 'Ausgabe') AND $__timeFilter(t.booking_date)\nGROUP BY DATE_FORMAT(t.booking_date, '%Y-%m-01')\nORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "piechart",
+      "title": "Ausgaben nach Kategorie (Zeitraum)",
+      "gridPos": { "h": 12, "w": 10, "x": 0, "y": 12 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyEUR" },
+        "overrides": []
+      },
+      "options": {
+        "displayLabels": ["name", "percent"],
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT c.name AS `Kategorie`, SUM(ABS(t.amount)) AS `Betrag`\nFROM transactions t\nJOIN categories c ON c.id = t.category_id\nWHERE c.type = 'Ausgabe' AND $__timeFilter(t.booking_date)\nGROUP BY c.name\nORDER BY `Betrag` DESC"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Ausgaben nach Kategorie (Tabelle)",
+      "gridPos": { "h": 12, "w": 14, "x": 10, "y": 12 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Betrag" }, "properties": [{ "id": "unit", "value": "currencyEUR" }] }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT c.name AS `Kategorie`, COUNT(*) AS `Anzahl`, SUM(ABS(t.amount)) AS `Betrag`\nFROM transactions t\nJOIN categories c ON c.id = t.category_id\nWHERE c.type = 'Ausgabe' AND $__timeFilter(t.booking_date)\nGROUP BY c.name\nORDER BY `Betrag` DESC"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Gebühren je Monat (Kontoführung + Order)",
+      "gridPos": { "h": 10, "w": 18, "x": 0, "y": 24 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "custom": { "drawStyle": "bars", "fillOpacity": 60 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT CAST(DATE_FORMAT(t.booking_date, '%Y-%m-01') AS DATE) AS time, c.name AS metric, SUM(ABS(t.amount)) AS value\nFROM transactions t\nJOIN categories c ON c.id = t.category_id\nWHERE c.name IN ('Kontoführungsgebühren', 'Ordergebühren') AND $__timeFilter(t.booking_date)\nGROUP BY DATE_FORMAT(t.booking_date, '%Y-%m-01'), c.name\nORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Gebühren gesamt (Zeitraum)",
+      "gridPos": { "h": 10, "w": 6, "x": 18, "y": 24 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyEUR" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT SUM(ABS(t.amount)) AS `Gebuehren`\nFROM transactions t\nJOIN categories c ON c.id = t.category_id\nWHERE c.name IN ('Kontoführungsgebühren', 'Ordergebühren') AND $__timeFilter(t.booking_date)"
+        }
+      ]
+    }
+  ]
+}

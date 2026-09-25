@@ -119,8 +119,8 @@ untersucht).
 
 Dieses Projekt betreibt kein eigenes Grafana – die Auswertungen werden in eine bereits
 vorhandene Grafana-Instanz eingebunden (KONZEPT.md Abschnitt 2/6: „Grafana ist optional"
-heißt hier konkret: extern und schon da, nicht Teil dieses Deployments). Zwei Dashboards,
-beide mit echten Daten verifiziert:
+heißt hier konkret: extern und schon da, nicht Teil dieses Deployments). Drei Dashboards,
+alle mit echten Daten verifiziert:
 
 - **`grafana/dashboards/salden.json`** – „Salden & Vermögen" (Phase 1): Saldo-Verlauf je
   Konto plus Gesamtsumme, sowie Vermögensentwicklung (Konten + Depots kombiniert) mit
@@ -128,8 +128,11 @@ beide mit echten Daten verifiziert:
 - **`grafana/dashboards/depot.json`** – „Depot" (Phase 2): Asset-Allokation als
   Kreisdiagramm, Positionstabelle, sowie Kurswert- und Gewinn/Verlust-Entwicklung je
   Einzelposition über die Zeit.
+- **`grafana/dashboards/cashflow.json`** – „Cashflow & Kosten" (Phase 3): Einnahmen/
+  Ausgaben/Netto je Monat, Ausgaben nach Kategorie, Gebührenübersicht (Kontoführungs-/
+  Ordergebühren). Interne Umbuchungen zwischen eigenen Konten sind ausgeschlossen.
 
-Beide JSON-Dateien sind die Quelle der Wahrheit und werden per
+Alle JSON-Dateien sind die Quelle der Wahrheit und werden per
 [Grafana-HTTP-API](https://grafana.com/docs/grafana/latest/developers/http_api/dashboard/)
 in die vorhandene Instanz importiert (`POST /api/dashboards/db`, `overwrite: true` – dieselbe
 Datei erneut posten überschreibt die vorhandene Version). Eine MySQL/MariaDB-Datenquelle mit
