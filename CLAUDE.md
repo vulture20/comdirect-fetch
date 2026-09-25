@@ -117,6 +117,17 @@ foo`), bash uses *that* exit status for the whole script, silently overriding an
 `exit N` earlier — write trap bodies as `if`/`fi` (which returns 0 on a false, no-else
 condition), not `[[ ]] && ...`, to avoid this.
 
+## Release automation
+
+`.github/workflows/docker-release.yml`: on every pushed `vX.Y.Z` tag, runs `dotnet build`
++ `dotnet test` as a gate, then builds the Docker image and pushes it to
+`ghcr.io/vulture20/comdirect-fetch` tagged with the version **and** `latest`. No extra
+secrets — uses the built-in `GITHUB_TOKEN`. Also has a `workflow_dispatch` trigger for
+manual test runs; those deliberately do *not* touch `latest` (tagged `manual-<run number>`
+instead) so a manual test can't accidentally become the "current" image. When you cut a
+release, tag with `git tag -a vX.Y.Z` matching `AppVersion.Current` and `git push origin
+vX.Y.Z` — that's what fires this.
+
 ## Data model and schema versioning
 
 `db/migrations/*.sql` is the only source of truth for the DB schema and is **append-only**:
