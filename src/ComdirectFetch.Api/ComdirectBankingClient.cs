@@ -20,13 +20,19 @@ public sealed class ComdirectBankingClient(
     {
         using var request = CreateRequest(HttpMethod.Get, "/api/banking/clients/user/v2/accounts/balances", token);
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await response.EnsureSuccessWithBodyAsync(cancellationToken);
 
         var body = await response.Content.ReadFromJsonAsync<AccountBalanceResponse>(cancellationToken: cancellationToken);
         return body?.Values ?? [];
     }
 
-    /// <summary>Iteriert über alle Seiten (paging-first/paging.matches), bis alle Umsätze abgerufen sind.</summary>
+    /// <summary>
+    /// Iteriert über alle Seiten (paging-first/paging.matches), bis alle Umsätze abgerufen sind.
+    /// transactionState=BOOKED ist erforderlich, sobald paginiert wird – mit dem Default BOTH
+    /// lehnt comdirect paging-first &gt; 0 mit 422 "Paging is only valid for booked account
+    /// transactions" ab (live getestet). Passt ohnehin zu unserem Modell: nur gebuchte,
+    /// endgültige Umsätze werden historisiert.
+    /// </summary>
     public async Task<IReadOnlyList<TransactionEntry>> GetTransactionsAsync(
         OAuthToken token, string accountId, CancellationToken cancellationToken = default)
     {
@@ -35,10 +41,10 @@ public sealed class ComdirectBankingClient(
 
         while (true)
         {
-            var path = $"/api/banking/v1/accounts/{accountId}/transactions?paging-first={first}";
+            var path = $"/api/banking/v1/accounts/{accountId}/transactions?transactionState=BOOKED&paging-first={first}";
             using var request = CreateRequest(HttpMethod.Get, path, token);
             using var response = await httpClient.SendAsync(request, cancellationToken);
-            response.EnsureSuccessStatusCode();
+            await response.EnsureSuccessWithBodyAsync(cancellationToken);
 
             var body = await response.Content.ReadFromJsonAsync<TransactionsResponse>(cancellationToken: cancellationToken);
             if (body is null || body.Values.Count == 0)
@@ -54,6 +60,10 @@ public sealed class ComdirectBankingClient(
             {
                 break;
             }
+
+            // Kleine Pause zwischen Seiten, um comdirects Rate-Limit nicht zu strapazieren
+            // (live beobachtet: viele Anfragen kurz hintereinander führen zu HTTP 429).
+            await Task.Delay(TimeSpan.FromMilliseconds(300), cancellationToken);
         }
 
         return results;
@@ -63,6 +73,7 @@ public sealed class ComdirectBankingClient(
     {
         var request = new HttpRequestMessage(method, $"{_options.BaseUrl}{path}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Headers.Add("x-http-request-info", requestContext.BuildRequestInfoHeader());
         return request;
     }

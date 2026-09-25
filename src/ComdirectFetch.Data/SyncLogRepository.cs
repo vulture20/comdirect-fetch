@@ -17,7 +17,20 @@ public sealed class SyncLogRepository(IDbConnectionFactory connectionFactory)
             SELECT LAST_INSERT_ID();
             """;
 
-        return await connection.ExecuteScalarAsync<long>(sql, entry);
+        // Enums explizit als String übergeben: Dapper wandelt Enum-Parameter sonst intern in
+        // ihren zugrunde liegenden Zahlentyp um, bevor ein registrierter TypeHandler geprüft
+        // wird – das passt nicht zu den MySQL-ENUM-Spalten ("Data truncated for column").
+        return await connection.ExecuteScalarAsync<long>(sql, new
+        {
+            DataKind = entry.DataKind.ToString(),
+            entry.AccountId,
+            entry.PortfolioId,
+            entry.ApplicationVersion,
+            entry.StartedAt,
+            entry.FinishedAt,
+            Status = entry.Status.ToString(),
+            entry.ErrorMessage,
+        });
     }
 
     public async Task CompleteAsync(
@@ -34,7 +47,7 @@ public sealed class SyncLogRepository(IDbConnectionFactory connectionFactory)
             WHERE id = @Id;
             """;
 
-        await connection.ExecuteAsync(sql, new { Id = id, Status = status, FinishedAt = finishedAt, ErrorMessage = errorMessage });
+        await connection.ExecuteAsync(sql, new { Id = id, Status = status.ToString(), FinishedAt = finishedAt, ErrorMessage = errorMessage });
     }
 
     /// <summary>Jüngster Eintrag – dient z. B. dazu, im Health-Status "Freigabe erforderlich" anzuzeigen.</summary>

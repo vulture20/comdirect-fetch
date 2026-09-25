@@ -35,27 +35,45 @@ Five projects under `src/`, referencing each other in one direction only
   `cd_secondary` token exchange → refresh); `ComdirectBankingClient`/`ComdirectBrokerageClient`
   fetch balances/transactions/depots/positions. Endpoint paths and JSON field names were
   cross-checked against the official Swagger/Postman collection/PDF spec the user placed at
-  `/opt/comdirect-fetch/docs` (see `CHANGELOG.md` 0.2.0) — still no live test against the
-  real API with real credentials, but structurally verified, including quirks like amounts
-  being JSON strings and `bookingDate` being a nested `{"date": ...}` object.
+  `/opt/comdirect-fetch/docs`, **and then live-tested end-to-end with real credentials**
+  (see `CHANGELOG.md` 0.2.0–0.5.0): login/session/TAN, balances, portfolio overview, and
+  paginated transactions all confirmed working. Several real API quirks the docs got wrong
+  were found and fixed this way — e.g. `bookingDate` is a plain string in practice (not the
+  documented nested `{"date": ...}` object; `FlexibleDateConverter` now accepts both), and
+  `paging-first > 0` needs `transactionState=BOOKED` explicitly or comdirect returns 422.
+  When something about the API doesn't behave as documented, trust a live test over the
+  docs — use `POST /debug/fetch-now` and `GET /debug/summary` (see below) to check quickly.
   **Safety-critical**: comdirect locks the entire online banking access (not just API
   access) after three wrong TAN entries or five unredeemed TAN challenges — never call
   `POST /auth/start` in a retry loop; `ComdirectAuthCoordinator.StartAsync` already returns
   the existing pending challenge instead of requesting a new one, but that's not a full
-  guard against external retries.
+  guard against external retries. Also watch for HTTP 429 (rate limiting) under heavy
+  testing — `ComdirectBankingClient` and `TransactionFetchService` already pause briefly
+  between paginated requests/accounts, but this isn't a full retry/backoff strategy.
 - **`ComdirectFetch.Data`** — Dapper + MySqlConnector repositories (one per table) and
   `DatabaseMigrator`, which runs the DbUp-based migration on startup against the scripts in
   `db/migrations/` (embedded into the assembly via the `.csproj`, not copied at runtime).
   `transactions` dedups via `INSERT IGNORE` on `(account_id, comdirect_reference)`; balance/
-  snapshot tables are plain append-only inserts.
+  snapshot tables are plain append-only inserts. **Dapper + enum parameters**: never pass a
+  C# enum property directly as a Dapper parameter against a MySQL `ENUM` column — Dapper
+  reduces enum parameters to their underlying numeric type internally before any registered
+  `SqlMapper.TypeHandler<T>` gets a chance to run, so the handler is silently ineffective and
+  the insert fails with "Data truncated for column". Convert with `.ToString()` in the
+  parameter object instead (see `SyncLogRepository`). Enum *columns* read back into enum
+  *properties* work fine without any of this — it's a parameter-binding-only gotcha.
 - **`ComdirectFetch.Worker`** — the entry point (`Program.cs`, ASP.NET Core minimal hosting,
   everything registered as singletons since repositories are stateless). Background
   services: `TokenRefreshBackgroundService` (keeps the session alive via refresh, runs far
   more often than the data-fetch intervals), `BalanceFetchService`,
   `PortfolioFetchService`, `TransactionFetchService` (calls `CategorizationService` after
-  inserting new transactions). `ComdirectAuthCoordinator` holds auth state in memory only —
-  a restart always requires a fresh TAN approval via `POST /auth/start` then
-  `POST /auth/confirm`. `GET /health` reports auth state and app version.
+  inserting new transactions). Each fetch service exposes a public `RunOnceAsync` in
+  addition to its `BackgroundService` loop (which now runs once immediately on startup
+  instead of waiting a full interval first) — `RunOnceAsync` is what `POST /debug/fetch-now`
+  calls to trigger an immediate fetch without touching auth/session. `ComdirectAuthCoordinator`
+  holds auth state in memory only — a restart always requires a fresh TAN approval via
+  `POST /auth/start` then `POST /auth/confirm`. `GET /health` reports auth state and app
+  version; `GET /debug/summary` reports row counts per table and the last 10 `sync_log`
+  entries for quick verification without direct DB access.
 - **`ComdirectFetch.Tests`** — xUnit; currently covers `CategorizationLogic` only.
 
 ## Data model and schema versioning
@@ -78,9 +96,14 @@ Do this as part of the change itself, not only when the user asks for it.
 
 ## Known gaps (see docs/konzept.md §9 for the full list)
 
-- No live test against the real comdirect API with real credentials yet — only
-  structurally verified against the official docs (see above).
 - `ComdirectAuthCoordinator` state is in-memory only (no persistence across restarts) —
   a restart always needs a fresh TAN approval.
+- Rate limiting (HTTP 429) under heavy/rapid API usage is only mitigated with fixed short
+  delays, not real retry/backoff — untested at production data volumes (large depots, many
+  accounts, long transaction history).
+- Error message bodies from comdirect can appear with garbled umlauts in logs (cosmetic,
+  root cause — likely a charset/encoding mismatch somewhere in the logging pipeline, not
+  necessarily in the app itself — not yet investigated).
 - Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
-  — check there first before guessing at API behavior.
+  — check there first before guessing at API behavior, but confirm against a real request
+  when in doubt: the docs have been wrong before (see above).
