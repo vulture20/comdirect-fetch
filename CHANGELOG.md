@@ -4,6 +4,19 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.9.0 – Phase 3 der Auswertungen: Cashflow & Kostenübersicht
+
+Neues Grafana-Dashboard `grafana/dashboards/cashflow.json` (KONZEPT.md Abschnitt 6, Phase 3):
+Einnahmen/Ausgaben/Netto je Monat (Balkendiagramm), Ausgaben nach Kategorie (Kreisdiagramm +
+Tabelle) sowie eine Gebührenübersicht (Kontoführungs-/Ordergebühren je Monat plus
+Gesamtsumme im Zeitraum). Interne Umbuchungen zwischen eigenen Konten sind ausgeschlossen
+(`category.type = InternNeutral`). Mit echten Daten verifiziert (7 Monate, z. B.
+Einnahmen/Ausgaben im Bereich 300–9.500 €). Dabei einen Grafana-MySQL-Fallstrick gefunden:
+`DATE_FORMAT(...)` zur Monats-Gruppierung liefert einen String, keinen echten Datumstyp –
+Grafana kann daraus kein Zeitfeld ableiten ("unable to convert data to a time field").
+Behoben mit `CAST(DATE_FORMAT(...) AS DATE)`, das den String wieder in ein echtes `DATE`
+wandelt.
+
 ## 0.8.1 – Zeilenumbruch-Fallstrick bei zwei Regeln aus 0.8.0 behoben
 
 Nach dem Deploy von 0.8.0 lief der Dienst länger authentifiziert weiter und sammelte 429
