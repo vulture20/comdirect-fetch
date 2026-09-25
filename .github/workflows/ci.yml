@@ -1,0 +1,27 @@
+name: CI
+
+# Baut und testet bei jedem Push auf einen Branch sowie bei jedem Pull Request gegen main
+# (GitHub-Issue #10) - unabhängig vom Release-Workflow (docker-release.yml), der nur bei
+# gepushten Versions-Tags läuft und zusätzlich das Docker-Image baut/veröffentlicht. Dieser
+# Workflow baut bewusst KEIN Docker-Image und veröffentlicht nichts - reines Build+Test-Gate,
+# damit ein kaputter Build/Test schon vor dem nächsten Release-Tag auffällt, nicht erst dabei.
+#
+# "branches: ['**']" statt kein Filter, damit Tag-Pushes (löst bereits docker-release.yml aus)
+# hier nicht zusätzlich einen redundanten Testlauf anstoßen.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: dotnet build
+      - run: dotnet test
