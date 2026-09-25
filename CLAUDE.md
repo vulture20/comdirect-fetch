@@ -187,6 +187,12 @@ Do this as part of the change itself, not only when the user asks for it.
   resolved at call time, not at DI-container-build time. Everything here is opt-in with a
   transparent fallback to `.env`/`ComdirectApiOptions` if the key file or DB row is absent — no
   forced migration for deployments that don't set this up.
+- No retention/cleanup process exists yet — `account_balances`, `portfolio_snapshots`/
+  `portfolio_positions`, and `sync_log` grow forever. A design is written up in
+  `docs/konzept.md` §11 (opt-in daily consolidation for balances/snapshots down to one row/day
+  after a configurable raw-data period, optional full deletion after a further period; simple
+  age-based deletion for `sync_log`; `transactions` deliberately untouched — it's the financial
+  ledger) — concept only, not yet implemented.
 - Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
   — check there first before guessing at API behavior, but confirm against a real request
   when in doubt: the docs have been wrong before (see above).
