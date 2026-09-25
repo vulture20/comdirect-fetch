@@ -28,6 +28,7 @@ public enum AuthState
 public sealed class ComdirectAuthCoordinator(
     ComdirectAuthClient authClient,
     AuthTokenRepository tokenRepository,
+    NotificationService notificationService,
     IOptions<ComdirectApiOptions> options,
     ILogger<ComdirectAuthCoordinator> logger)
 {
@@ -132,7 +133,13 @@ public sealed class ComdirectAuthCoordinator(
         await PersistCurrentTokenAsync(cancellationToken);
     }
 
-    /// <summary>Wird periodisch vom TokenRefreshBackgroundService aufgerufen (KONZEPT.md Abschnitt 3).</summary>
+    /// <summary>
+    /// Wird periodisch vom TokenRefreshBackgroundService aufgerufen (KONZEPT.md Abschnitt 3) und
+    /// von TryRestoreAsync beim Start. Löst bei einem tatsächlichen Übergang in
+    /// AuthState.NichtAuthentifiziert eine Benachrichtigung aus (GitHub-Issue #6) - da diese
+    /// Methode nur erreicht wird, während CurrentToken noch gesetzt ist (siehe früher Return
+    /// oben), feuert das genau einmal pro Ausfall, nicht bei jedem weiteren Intervall-Tick.
+    /// </summary>
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         OAuthToken? current;
@@ -166,6 +173,7 @@ public sealed class ComdirectAuthCoordinator(
             }
 
             await tokenRepository.ClearAsync(cancellationToken);
+            await notificationService.NotifyAuthRequiredAsync(ex.Message, cancellationToken);
             throw;
         }
     }

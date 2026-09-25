@@ -16,6 +16,7 @@ builder.Services.Configure<ComdirectApiOptions>(builder.Configuration.GetSection
 builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.SectionName));
 builder.Services.Configure<FetchOptions>(builder.Configuration.GetSection(FetchOptions.SectionName));
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));
+builder.Services.Configure<NotificationOptions>(builder.Configuration.GetSection(NotificationOptions.SectionName));
 
 builder.Services.AddSingleton<ComdirectRequestContext>();
 builder.Services.AddSingleton<CredentialProvider>();
@@ -24,6 +25,15 @@ builder.Services.AddHttpClient<ComdirectAuthClient>();
 builder.Services.AddHttpClient<ComdirectBankingClient>();
 builder.Services.AddHttpClient<ComdirectBrokerageClient>();
 builder.Services.AddSingleton<ComdirectAuthCoordinator>();
+
+// GitHub-Issue #6: Benachrichtigungskanäle, beide opt-in und gleichzeitig nutzbar ("auch
+// parallel"). Als IEnumerable<INotificationChannel> registriert, damit NotificationService alle
+// aktivierten Kanäle findet, ohne sie einzeln zu kennen.
+builder.Services.AddSingleton<EmailNotificationChannel>();
+builder.Services.AddSingleton<INotificationChannel>(sp => sp.GetRequiredService<EmailNotificationChannel>());
+builder.Services.AddHttpClient<WebhookNotificationChannel>();
+builder.Services.AddSingleton<INotificationChannel>(sp => sp.GetRequiredService<WebhookNotificationChannel>());
+builder.Services.AddSingleton<NotificationService>();
 
 builder.Services.AddSingleton<IDbConnectionFactory>(sp =>
 {
@@ -165,6 +175,14 @@ app.MapPost("/debug/consolidate", async (RetentionService retention, Cancellatio
 {
     await retention.RunOnceAsync(ct);
     return Results.Ok(new { Message = "Konsolidierung/Aufräumen angestoßen, siehe sync_log für Details." });
+});
+
+// GitHub-Issue #6: löst eine Testbenachrichtigung über alle aktivierten Kanäle aus, ohne dafür
+// eine echte Session-Störung abwarten zu müssen. Berührt weder Session noch TAN.
+app.MapPost("/debug/notify-test", async (NotificationService notifications, CancellationToken ct) =>
+{
+    await notifications.NotifyAuthRequiredAsync("Dies ist eine Testbenachrichtigung (POST /debug/notify-test).", ct);
+    return Results.Ok(new { Message = "Testbenachrichtigung an alle aktivierten Kanäle angestoßen, siehe Logs für Details." });
 });
 
 app.Run();
