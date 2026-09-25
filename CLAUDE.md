@@ -148,8 +148,13 @@ Do this as part of the change itself, not only when the user asks for it.
 
 ## Known gaps (see docs/konzept.md §9 for the full list)
 
-- `ComdirectAuthCoordinator` state is in-memory only (no persistence across restarts) —
-  a restart always needs a fresh TAN approval.
+- `ComdirectAuthCoordinator` state now survives restarts when `Comdirect__TokenEncryptionKeyBase64`
+  is set (v0.11.0): the current token is AES-256-GCM encrypted (`ComdirectFetch.Domain.SecretEncryption`)
+  and stored via `ComdirectFetch.Data.AuthTokenRepository` in `auth_token_store`
+  (`db/migrations/0006_auth_token_store.sql`), restored via `ComdirectAuthCoordinator.TryRestoreAsync`
+  in `Program.cs` before `app.Run()`. Without that env var set, behavior is unchanged
+  (in-memory only, fresh TAN approval needed on every restart) — it's opt-in, and only the
+  encrypted blob is stored, never the key itself.
 - Rate limiting has real retry/backoff now (see above) but is untested at production data
   volumes (large depots, many accounts, long transaction history).
 - Error message bodies from comdirect can appear with garbled umlauts in logs (cosmetic,

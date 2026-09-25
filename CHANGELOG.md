@@ -4,6 +4,35 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.11.0 – Auth-Status übersteht jetzt einen Neustart (Issue #5)
+
+`ComdirectAuthCoordinator` hielt den Session-Token bisher ausschließlich im Prozessspeicher –
+jeder Container-Neustart brauchte eine komplett neue TAN-Freigabe, obwohl der bestehende
+Refresh-Token oft noch gültig gewesen wäre. Neue Migration `0006_auth_token_store.sql` legt
+eine Einzelzeilen-Tabelle für den verschlüsselten Token an; neue, reine
+`ComdirectFetch.Domain.SecretEncryption` (AES-256-GCM, ohne DB-/API-Abhängigkeit) verschlüsselt
+ihn, `ComdirectFetch.Data.AuthTokenRepository` speichert nur den opaken Blob (nonce/ciphertext/
+tag) – kennt weder OAuthToken noch Kryptografie, passend zur Architekturregel, dass `Api` und
+`Data` sich nicht gegenseitig referenzieren dürfen. `ComdirectAuthCoordinator` persistiert den
+aktuellen Token nach jeder erfolgreichen TAN-Freigabe und jedem erfolgreichen Refresh und
+versucht beim Start (`TryRestoreAsync`, aufgerufen in `Program.cs` vor `app.Run()`), einen
+gespeicherten Token zu laden, zu entschlüsseln und per Refresh zu validieren – gelingt das,
+ist die Session sofort `Authentifiziert`, ganz ohne `/auth/start`.
+
+**Bewusst opt-in**: neue, optionale Umgebungsvariable `Comdirect__TokenEncryptionKeyBase64`
+(Base64-kodierter 32-Byte-AES-256-Schlüssel, z. B. via `openssl rand -base64 32`). Ist sie
+nicht gesetzt, bleibt das Verhalten exakt wie vorher (In-Memory-only, jeder Neustart braucht
+eine neue TAN-Freigabe) – die neue Tabelle bleibt dann ungenutzt. Der Schlüssel selbst landet
+nie in der Datenbank, nur der damit verschlüsselte Blob. Schlägt Entschlüsselung oder der
+anschließende Refresh fehl (z. B. weil der Refresh-Token zwischenzeitlich abgelaufen ist),
+wird der gespeicherte Token verworfen und der Dienst verhält sich wie ohne Persistierung –
+eine neue TAN-Freigabe ist dann fällig, genau wie vorher.
+
+Live verifiziert: echten Token nach TAN-Freigabe persistiert, Container neu gestartet,
+`GET /health` zeigte danach direkt `Authentifiziert` ohne erneuten `/auth/start`-Aufruf.
+Neue Tests in `SecretEncryptionTests.cs` (Roundtrip, unterschiedliche Nonces je Aufruf,
+Erkennung von falschem Schlüssel/manipuliertem Ciphertext, Schlüssellängen-Validierung).
+
 ## 0.10.0 – Phase 4 der Auswertungen: Depot-Performance (vereinfacht)
 
 Neues Grafana-Dashboard `grafana/dashboards/depot-performance.json` (KONZEPT.md Abschnitt 6,

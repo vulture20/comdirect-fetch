@@ -31,6 +31,7 @@ builder.Services.AddSingleton<CategoryRepository>();
 builder.Services.AddSingleton<CategorizationRuleRepository>();
 builder.Services.AddSingleton<SyncLogRepository>();
 builder.Services.AddSingleton<DiagnosticsRepository>();
+builder.Services.AddSingleton<AuthTokenRepository>();
 builder.Services.AddSingleton<CategorizationService>();
 
 builder.Services.AddHostedService<TokenRefreshBackgroundService>();
@@ -52,6 +53,14 @@ using (var scope = app.Services.CreateScope())
 {
     var dbOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<DatabaseOptions>>().Value;
     scope.ServiceProvider.GetRequiredService<DatabaseMigrator>().MigrateToLatest(dbOptions.BuildConnectionString());
+}
+
+// KONZEPT.md Abschnitt 3/9: versucht, eine vorher persistierte Session wiederherzustellen,
+// bevor der Dienst startet - ohne Comdirect__TokenEncryptionKeyBase64 oder ohne gespeicherten
+// gültigen Token bleibt es beim bisherigen Verhalten (/auth/start nötig).
+using (var scope = app.Services.CreateScope())
+{
+    await scope.ServiceProvider.GetRequiredService<ComdirectAuthCoordinator>().TryRestoreAsync();
 }
 
 // KONZEPT.md Abschnitt 3: TAN-Freigabe kann der Container nicht automatisch erledigen.
