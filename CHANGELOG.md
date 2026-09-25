@@ -4,6 +4,23 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.10.0 – Phase 4 der Auswertungen: Depot-Performance (vereinfacht)
+
+Neues Grafana-Dashboard `grafana/dashboards/depot-performance.json` (KONZEPT.md Abschnitt 6,
+Phase 4): Depotwert vs. Kapitaleinsatz über die Zeit, unrealisierter Gewinn/Verlust absolut
+und in Prozent, jeweils als Zeitreihe plus aktueller Stand. Nutzt `total_value` und
+`acquisition_value` aus `portfolio_snapshots` (bereits seit Phase 1 vorhanden).
+
+**Bewusst vereinfachter Umfang** (Nutzerentscheidung): Eine vollständige, um externe Ein-/
+Auszahlungen bereinigte Performance-Kennzahl bräuchte sowohl eine Depot↔Verrechnungskonto-
+Verknüpfung (existiert im Datenmodell noch nicht) als auch echte Wertpapier-Kauf/Verkauf-
+Umsätze zum Verifizieren (die Kategorie „Ordergebühren" hat in den Live-Daten aktuell 0
+Treffer). Statt das ungetestet zu bauen, zeigt dieses Dashboard den unrealisierten Gewinn/
+Verlust der aktuell gehaltenen Positionen (`total_value − acquisition_value`) – enthält
+**keine** realisierten Gewinne aus bereits verkauften Positionen und **keine** externen
+Ein-/Auszahlungen. Mit echten Daten verifiziert (5 Snapshots, aktuell −957,45 € / −2,68 %
+unrealisiert). Volle Cashflow-Bereinigung als Folge-Issue vorgemerkt.
+
 ## 0.9.0 – Phase 3 der Auswertungen: Cashflow & Kostenübersicht
 
 Neues Grafana-Dashboard `grafana/dashboards/cashflow.json` (KONZEPT.md Abschnitt 6, Phase 3):

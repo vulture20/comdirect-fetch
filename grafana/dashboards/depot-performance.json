@@ -1,0 +1,124 @@
+{
+  "uid": "comdirect-depot-performance",
+  "title": "comdirect-fetch: Depot-Performance",
+  "description": "Unrealisierter Gewinn/Verlust der aktuell gehaltenen Depotpositionen (total_value vs. acquisition_value aus portfolio_snapshots) – KONZEPT.md Abschnitt 6, Phase 4, vereinfachte Variante. ACHTUNG: enthält NICHT realisierte Gewinne/Verluste aus bereits verkauften Positionen und NICHT externe Ein-/Auszahlungen auf das Verrechnungskonto – dafür fehlt aktuell sowohl eine Depot↔Konto-Verknüpfung im Datenmodell als auch verifizierbare echte Wertpapier-Handelsdaten. Siehe docs/konzept.md Abschnitt 9.",
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "browser",
+  "time": { "from": "now-1y", "to": "now" },
+  "refresh": "5m",
+  "tags": ["comdirect-fetch"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Depotwert vs. Kapitaleinsatz",
+      "description": "Summe über alle Depots. Kapitaleinsatz = Anschaffungswert der aktuell gehaltenen Positionen (acquisition_value), keine vollständige Einzahlungshistorie.",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "spanNulls": true }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ps.recorded_at AS time, 'Depotwert' AS metric, SUM(ps.total_value) AS value\nFROM portfolio_snapshots ps\nWHERE $__timeFilter(ps.recorded_at)\nGROUP BY ps.recorded_at\nUNION ALL\nSELECT ps.recorded_at AS time, 'Kapitaleinsatz' AS metric, SUM(ps.acquisition_value) AS value\nFROM portfolio_snapshots ps\nWHERE $__timeFilter(ps.recorded_at)\nGROUP BY ps.recorded_at\nORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Unrealisierter Gewinn/Verlust (absolut)",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "fillOpacity": 20 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ps.recorded_at AS time, 'Unrealisierter Gewinn/Verlust' AS metric, SUM(ps.total_value) - SUM(ps.acquisition_value) AS value\nFROM portfolio_snapshots ps\nWHERE $__timeFilter(ps.recorded_at)\nGROUP BY ps.recorded_at\nORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Unrealisierte Rendite (%)",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter" }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ps.recorded_at AS time, 'Rendite' AS metric,\n       (SUM(ps.total_value) - SUM(ps.acquisition_value)) / NULLIF(SUM(ps.acquisition_value), 0) * 100 AS value\nFROM portfolio_snapshots ps\nWHERE $__timeFilter(ps.recorded_at)\nGROUP BY ps.recorded_at\nORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Unrealisierter Gewinn/Verlust aktuell",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 22 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyEUR" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT SUM(total_value) - SUM(acquisition_value) AS `Gewinn_Verlust`\nFROM portfolio_snapshots\nWHERE recorded_at = (SELECT MAX(recorded_at) FROM portfolio_snapshots)"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Unrealisierte Rendite aktuell",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 22 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (SUM(total_value) - SUM(acquisition_value)) / NULLIF(SUM(acquisition_value), 0) * 100 AS `Rendite`\nFROM portfolio_snapshots\nWHERE recorded_at = (SELECT MAX(recorded_at) FROM portfolio_snapshots)"
+        }
+      ]
+    }
+  ]
+}
