@@ -1,3 +1,5 @@
+using ComdirectFetch.Domain;
+
 namespace ComdirectFetch.Api;
 
 internal static class HttpResponseExtensions
@@ -6,6 +8,9 @@ internal static class HttpResponseExtensions
     /// Wie EnsureSuccessStatusCode(), liest bei einem Fehler aber zusätzlich den Response-Body
     /// (comdirect liefert dort meist eine aussagekräftige Fehlerbeschreibung, z. B. bei 422)
     /// und hängt ihn an die Exception-Message an, statt ihn stillschweigend zu verwerfen.
+    /// Dekodiert bewusst über TextDecoding.DecodeUtf8WithLatin1Fallback statt der Standard-
+    /// ReadAsStringAsync-Charset-Erkennung (GitHub-Issue #8: comdirect-Fehlertexte kommen teils
+    /// Latin-1-kodiert ohne verlässlichen Charset-Header, was sonst zu "�"-Zeichen führt).
     /// </summary>
     public static async Task EnsureSuccessWithBodyAsync(this HttpResponseMessage response, CancellationToken cancellationToken)
     {
@@ -14,7 +19,8 @@ internal static class HttpResponseExtensions
             return;
         }
 
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        var body = TextDecoding.DecodeUtf8WithLatin1Fallback(bytes);
         throw new HttpRequestException(
             $"{(int)response.StatusCode} {response.ReasonPhrase} für {response.RequestMessage?.RequestUri}: {body}");
     }

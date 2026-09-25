@@ -4,6 +4,24 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.13.1 – Umlaut-/Encoding-Bug in geloggten comdirect-Fehlertexten behoben (Issue #8)
+
+Fehlertexte von comdirect (z. B. bei HTTP 429 "Die erlaubte Anzahl der Anfragen ist
+überschritten") erschienen in Logs teils mit kaputten Zeichen (`�berschritten` statt
+`überschritten`). Root Cause durch Reproduktion bestätigt, nicht geraten: comdirects
+Fehler-Response-Bytes sind tatsächlich Latin-1/ISO-8859-1-kodiert, ohne verlässlichen
+Charset-Header. .NETs Standard-`ReadAsStringAsync` geht ohne Charset-Header von UTF-8 aus und
+ersetzt ungültige Byte-Folgen lautlos durch U+FFFD (`�`), statt einen Fehler zu melden oder eine
+andere Kodierung zu versuchen – mit echten Latin-1-Bytes für "überschritten" durch .NETs
+tatsächlichen Decoder reproduziert und exakt das `�berschritten`-Symptom aus dem Issue
+nachgestellt.
+
+Fix: neue, reine `ComdirectFetch.Domain.TextDecoding.DecodeUtf8WithLatin1Fallback` (unit-getestet)
+versucht zuerst strikte UTF-8-Dekodierung und fällt nur bei einem tatsächlichen Dekodierfehler auf
+Latin-1 zurück – echte UTF-8-Antworten sind davon unberührt. Eingesetzt in
+`HttpResponseExtensions.EnsureSuccessWithBodyAsync` (Api) anstelle der Standard-Charset-Erkennung
+von `ReadAsStringAsync`.
+
 ## 0.13.0 – Konsolidierungs- und Aufräumprozess für Zeitreihen-Daten (docs/konzept.md Abschnitt 11)
 
 `account_balances` und `portfolio_snapshots`/`portfolio_positions` wuchsen mit jedem
