@@ -101,7 +101,10 @@ untersucht).
 
 ## Grafana-Dashboards
 
-Zwei Dashboards, beide mit echten Daten verifiziert (KONZEPT.md Abschnitt 6):
+Dieses Projekt betreibt kein eigenes Grafana – die Auswertungen werden in eine bereits
+vorhandene Grafana-Instanz eingebunden (KONZEPT.md Abschnitt 2/6: „Grafana ist optional"
+heißt hier konkret: extern und schon da, nicht Teil dieses Deployments). Zwei Dashboards,
+beide mit echten Daten verifiziert:
 
 - **`grafana/dashboards/salden.json`** – „Salden & Vermögen" (Phase 1): Saldo-Verlauf je
   Konto plus Gesamtsumme, sowie Vermögensentwicklung (Konten + Depots kombiniert) mit
@@ -110,16 +113,13 @@ Zwei Dashboards, beide mit echten Daten verifiziert (KONZEPT.md Abschnitt 6):
   Kreisdiagramm, Positionstabelle, sowie Kurswert- und Gewinn/Verlust-Entwicklung je
   Einzelposition über die Zeit.
 
-Zwei Wege, sie zu nutzen:
-
-- **Kein eigenes Grafana vorhanden**: `docker compose -f docker/docker-compose.yml up fetch grafana`
-  startet zusätzlich eine eigene Grafana-Instanz (Port 3000) mit Datenquelle und beiden
-  Dashboards bereits automatisch provisioniert aus `grafana/provisioning/`.
-- **Bereits vorhandenes Grafana** (wie bei der Erstinstallation hier): `docker compose up fetch`
-  (ohne den `grafana`-Service) und Datenquelle + Dashboards manuell oder per
-  [Grafana-HTTP-API](https://grafana.com/docs/grafana/latest/developers/http_api/) im
-  bestehenden Grafana anlegen – Vorlagen dafür sind `grafana/provisioning/datasources/mariadb.yml`
-  und die beiden Dashboard-JSONs oben.
+Beide JSON-Dateien sind die Quelle der Wahrheit und werden per
+[Grafana-HTTP-API](https://grafana.com/docs/grafana/latest/developers/http_api/dashboard/)
+in die vorhandene Instanz importiert (`POST /api/dashboards/db`, `overwrite: true` – dieselbe
+Datei erneut posten überschreibt die vorhandene Version). Eine MySQL/MariaDB-Datenquelle mit
+uid `comdirect-mariadb` muss dort einmalig angelegt sein (Host/Port/DB/User/Passwort aus der
+`.env`); dafür sind in dieser bestehenden Grafana-Instanz Admin-Rechte nötig – ein
+Service-Account mit nur Editor-Rolle darf keine Datenquellen anlegen.
 
 ## Versionierung
 
