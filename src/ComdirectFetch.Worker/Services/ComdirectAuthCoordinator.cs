@@ -1,5 +1,9 @@
+using System.Text.Json;
 using System.Threading;
 using ComdirectFetch.Api;
+using ComdirectFetch.Data;
+using ComdirectFetch.Domain;
+using Microsoft.Extensions.Options;
 
 namespace ComdirectFetch.Worker.Services;
 
@@ -14,17 +18,54 @@ public enum AuthState
 /// Hält den Authentifizierungs-Zustand des laufenden Diensts (KONZEPT.md Abschnitt 3) und
 /// orchestriert den mehrstufigen Ablauf. Wird von den /auth/*-Endpunkten (manuelle
 /// TAN-Freigabe) und vom TokenRefreshBackgroundService (automatischer Refresh) verwendet.
-/// Als einfachste erste Variante hält der Coordinator seinen Zustand nur im Prozessspeicher;
-/// nach einem Neustart ist daher in jedem Fall eine neue TAN-Freigabe nötig.
+/// Der Zustand lebt primär im Prozessspeicher; ist Comdirect__TokenEncryptionKeyBase64
+/// gesetzt, wird der aktuelle Token zusätzlich AES-256-GCM-verschlüsselt in
+/// auth_token_store abgelegt, sodass <see cref="TryRestoreAsync"/> ihn nach einem Neustart
+/// wiederherstellen kann, solange er (ggf. per Refresh) noch gültig ist - ohne neue
+/// TAN-Freigabe. Ohne gesetzten Schlüssel bleibt es beim bisherigen Verhalten (jeder
+/// Neustart braucht eine neue TAN-Freigabe).
 /// </summary>
 public sealed class ComdirectAuthCoordinator(
     ComdirectAuthClient authClient,
+    AuthTokenRepository tokenRepository,
+    IOptions<ComdirectApiOptions> options,
     ILogger<ComdirectAuthCoordinator> logger)
 {
     private readonly Lock _lock = new();
+    private readonly byte[]? _encryptionKey = DecodeKeyOrNull(options.Value.TokenEncryptionKeyBase64, logger);
     private OAuthToken? _initialToken;
     private SessionInfo? _session;
     private TanChallenge? _pendingChallenge;
+
+    private static byte[]? DecodeKeyOrNull(string? base64Key, ILogger logger)
+    {
+        if (string.IsNullOrWhiteSpace(base64Key))
+        {
+            return null;
+        }
+
+        byte[] key;
+        try
+        {
+            key = Convert.FromBase64String(base64Key);
+        }
+        catch (FormatException)
+        {
+            logger.LogWarning(
+                "Comdirect__TokenEncryptionKeyBase64 ist kein gültiger Base64-Wert – Token-Persistierung bleibt deaktiviert.");
+            return null;
+        }
+
+        if (key.Length != SecretEncryption.KeySizeBytes)
+        {
+            logger.LogWarning(
+                "Comdirect__TokenEncryptionKeyBase64 muss {Expected} Bytes dekodieren (AES-256), hat aber {Actual} – Token-Persistierung bleibt deaktiviert.",
+                SecretEncryption.KeySizeBytes, key.Length);
+            return null;
+        }
+
+        return key;
+    }
 
     public AuthState State { get; private set; } = AuthState.NichtAuthentifiziert;
     public OAuthToken? CurrentToken { get; private set; }
@@ -88,6 +129,7 @@ public sealed class ComdirectAuthCoordinator(
         }
 
         logger.LogInformation("comdirect-Session erfolgreich freigegeben.");
+        await PersistCurrentTokenAsync(cancellationToken);
     }
 
     /// <summary>Wird periodisch vom TokenRefreshBackgroundService aufgerufen (KONZEPT.md Abschnitt 3).</summary>
@@ -111,6 +153,8 @@ public sealed class ComdirectAuthCoordinator(
             {
                 CurrentToken = refreshed;
             }
+
+            await PersistCurrentTokenAsync(cancellationToken);
         }
         catch (Exception ex)
         {
@@ -121,7 +165,89 @@ public sealed class ComdirectAuthCoordinator(
                 State = AuthState.NichtAuthentifiziert;
             }
 
+            await tokenRepository.ClearAsync(cancellationToken);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Versucht beim Start, eine vorher persistierte Session wiederherzustellen, ohne eine
+    /// neue TAN-Freigabe anzufordern. Gibt true zurück, wenn die Session danach gültig und
+    /// aktiv ist. Ohne konfigurierten Schlüssel oder ohne gespeicherten Token (oder wenn der
+    /// gespeicherte Token sich nicht mehr erneuern lässt) wird false zurückgegeben - der
+    /// Dienst verhält sich dann wie bisher (NichtAuthentifiziert, /auth/start nötig).
+    /// </summary>
+    public async Task<bool> TryRestoreAsync(CancellationToken cancellationToken = default)
+    {
+        if (_encryptionKey is null)
+        {
+            return false;
+        }
+
+        var stored = await tokenRepository.LoadAsync(cancellationToken);
+        if (stored is null)
+        {
+            return false;
+        }
+
+        OAuthToken token;
+        try
+        {
+            var plaintext = SecretEncryption.Decrypt(_encryptionKey, new EncryptedSecret(stored.Nonce, stored.Ciphertext, stored.Tag));
+            token = JsonSerializer.Deserialize<OAuthToken>(plaintext)
+                ?? throw new InvalidOperationException("Persistierter Token konnte nicht deserialisiert werden.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Persistierter comdirect-Token konnte nicht entschlüsselt werden – neue TAN-Freigabe erforderlich.");
+            await tokenRepository.ClearAsync(cancellationToken);
+            return false;
+        }
+
+        lock (_lock)
+        {
+            CurrentToken = token;
+        }
+
+        try
+        {
+            await RefreshAsync(cancellationToken);
+        }
+        catch (Exception)
+        {
+            // RefreshAsync hat CurrentToken/State/Store bereits bereinigt und den Fehler geloggt.
+            return false;
+        }
+
+        lock (_lock)
+        {
+            State = AuthState.Authentifiziert;
+        }
+
+        logger.LogInformation("comdirect-Session nach Neustart wiederhergestellt, ohne neue TAN-Freigabe.");
+        return true;
+    }
+
+    private async Task PersistCurrentTokenAsync(CancellationToken cancellationToken)
+    {
+        if (_encryptionKey is null)
+        {
+            return;
+        }
+
+        OAuthToken? current;
+        lock (_lock)
+        {
+            current = CurrentToken;
+        }
+
+        if (current is null)
+        {
+            return;
+        }
+
+        var plaintext = JsonSerializer.SerializeToUtf8Bytes(current);
+        var encrypted = SecretEncryption.Encrypt(_encryptionKey, plaintext);
+        await tokenRepository.SaveAsync(encrypted.Nonce, encrypted.Ciphertext, encrypted.Tag, cancellationToken);
     }
 }
