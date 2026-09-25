@@ -213,7 +213,21 @@ Diese Pflege übernimmt Claude Code während der Entwicklung selbstständig als 
 - **Kategorisierung von Buchungstexten** (Abschnitt 6): Mechanismus ist umgesetzt und mit echten Umsatzdaten verifiziert (siehe `CHANGELOG.md` 0.8.0, `db/migrations/0004_extend_categorization_rules.sql`) – 12 Start-Regeln (0002) plus 14 weitere Regeln/7 neue Kategorien anhand der ersten 16 realen Kontoumsätze. Die zuvor offene Frage nach dem genauen Vorgehen für eine erneute Kategorisierung des Bestands bei Regeländerungen ist ebenfalls geklärt: `POST /debug/recategorize` / `comdirectctl.sh recategorize` wenden den aktuellen Regelsatz erneut auf alle nicht manuell kategorisierten Umsätze an. Erledigt für den aktuellen Datenstand; weitere Muster werden iterativ ergänzt, sobald neue, bisher unbekannte Buchungstexte auftauchen.
 - **Umfang**: Konzept geht von einem einzelnen comdirect-Zugang aus (ein Nutzer, aber ggf. mehrere Konten/Depots innerhalb dieses Zugangs), keine Mandantenfähigkeit für mehrere getrennte comdirect-Zugänge.
 - **MariaDB-Bereitstellung**: Datenbank samt Zugangsdaten wird vom Nutzer extern zur Verfügung gestellt; Betrieb/Deployment der Datenbank ist nicht Teil dieses Projekts.
-- **Eindeutigkeit der Kontoumsatz-Referenz** (Abschnitt 5): Die offizielle Doku bezeichnet `reference` explizit als „unique reference code of the transaction“ – die Dedup-Annahme ist damit bestätigt. Offen bleibt nur, ob die Eindeutigkeit global oder je Konto gilt; der gewählte Schlüssel (`account_id`, `comdirect_reference`) ist für beide Fälle sicher.
+- **Eindeutigkeit der Kontoumsatz-Referenz** (Abschnitt 5, GitHub-Issue #11): Weder Swagger noch
+  die deutsche PDF-Doku qualifizieren „unique reference code of the transaction“/„Eine eindeutige
+  Referenznummer für diesen Umsatz“ näher – beide lassen offen, ob global oder je Konto. Per
+  Analyse der echten Live-Daten (429 Umsätze über 3 echte Konten) mit hoher Zuversicht geklärt,
+  aber bewusst nicht als hundertprozentig bewiesen dargestellt: (1) `comdirect_reference` ist im
+  realen Datenbestand bereits kontoübergreifend eindeutig – 429 Zeilen, 429 verschiedene Werte,
+  keine einzige Referenz taucht unter mehr als einem Konto auf; (2) das Format
+  (`<16-stelliges alphanumerisches Präfix>/<numerische Sequenznummer>`, z. B.
+  `022C296Z1STT9BUX/43176`) sieht nach einer bankinternen Clearing-/Abwicklungs-Batch-ID plus
+  Sequenznummer aus, nicht nach etwas, das eine Kontonummer kodiert – solche Clearing-IDs werden
+  typischerweise bankweit vergeben, nicht je Konto; (3) beide Doku-Varianten formulieren „unique“
+  unqualifiziert, während vergleichbare Felder in derselben Doku, wo eine Einschränkung gemeint
+  ist, das auch explizit benennen. Praktisch ändert das nichts: der gewählte Schlüssel
+  (`account_id`, `comdirect_reference`) bleibt in jedem Fall sicher, daher keine Code-Änderung.
+  Erledigt (mit dokumentierter Restunsicherheit, siehe oben).
 - **Migrationswerkzeug** (Abschnitt 8): In der technischen Umsetzung wurde DbUp gewählt (führt die Historie angewendeter SQL-Skripte in der Zieldatenbank selbst). Erledigt.
 - **Live-Verifikation gegen die echte comdirect-API** (Abschnitt 3): Login/Session/TAN-Flow, Salden, Depotübersicht (inkl. Positionen) und Kontoumsätze (inkl. Pagination über mehrere Seiten) wurden mit echten Zugangsdaten erfolgreich end-to-end getestet, siehe `CHANGELOG.md` 0.3.0–0.5.0. Erledigt.
 - **Rate-Limiting** (Abschnitt 3): comdirect begrenzt die Anfragerate (HTTP 429 „rate.exceeded“) – bei intensivem Testen live beobachtet. Neben den proaktiven Pausen zwischen Pagination-Seiten/Konten gibt es jetzt ein echtes Retry-mit-Backoff (`ComdirectResilience`, siehe `CHANGELOG.md` 0.6.0) für Token- und Datenendpunkte. Erledigt für den Normalfall; ob das bei sehr großen Depots/Kontenzahlen im Dauerbetrieb ausreicht, bleibt zu beobachten.
