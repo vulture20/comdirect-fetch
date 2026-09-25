@@ -54,6 +54,10 @@ oder einer längeren Downtime wieder nötig.
 
 `GET /health` zeigt den aktuellen Authentifizierungsstatus und die Anwendungsversion.
 
+**Test-/Betriebshilfen** (berühren keine Session/TAN, gefahrlos wiederholbar):
+- `POST /debug/fetch-now` – stößt Salden-, Depotübersicht- und Umsatzabruf sofort an, statt auf die konfigurierten Intervalle zu warten.
+- `GET /debug/summary` – Zeilenanzahl je Tabelle plus die letzten 10 `sync_log`-Einträge, zur schnellen Verifikation ohne direkten DB-Zugriff.
+
 ## ⚠️ TAN-Sperre – bitte unbedingt beachten
 
 comdirect sperrt nach **drei falschen TAN-Eingaben** oder **fünf TAN-Challenges ohne
@@ -65,11 +69,18 @@ zurück statt eine neue anzufordern, aber das schützt nicht vor externen Skript
 ## Stand der comdirect-Endpunkte
 
 Die in `src/ComdirectFetch.Api` verwendeten Endpunkt-Pfade und JSON-Felder wurden gegen die
-offizielle comdirect REST API Dokumentation (Swagger, Postman-Collection, PDF-Spezifikation)
-abgeglichen und korrigiert – siehe `CHANGELOG.md` 0.2.0. Strukturell verifiziert; ein
-Testlauf gegen die echte API mit echten Zugangsdaten steht aber noch aus. Bei
-Abweichungen die DTOs in `BankingModels.cs`/`BrokerageModels.cs`/`SessionModels.cs` sowie
-die Pfade in den jeweiligen Clients anpassen.
+offizielle comdirect REST API Dokumentation abgeglichen **und zusätzlich mit echten
+Zugangsdaten end-to-end live getestet**: Login/Session/TAN-Flow, Salden (3 Konten),
+Depotübersicht (inkl. Positionen mit ISIN/Name) und Kontoumsätze (inkl. Pagination über
+mehrere Seiten) funktionieren nachweislich (siehe `CHANGELOG.md` 0.2.0–0.5.0). Dabei wurden
+mehrere reale Abweichungen von der Doku gefunden und behoben (u. a. `bookingDate` als
+einfacher String statt verschachteltem Objekt, `paging-first` erfordert
+`transactionState=BOOKED`, comdirects Rate-Limit bei vielen Anfragen).
+
+**Bekannte Restrisiken**: Rate-Limiting bei sehr großen Depots/vielen Konten im Dauerbetrieb
+ist nur ansatzweise (Pausen zwischen Requests) adressiert, nicht mit Retry/Backoff. Fehler-
+texte mit Umlauten wurden in den Logs teils falsch codiert dargestellt (rein kosmetisch,
+noch nicht untersucht).
 
 ## Versionierung
 

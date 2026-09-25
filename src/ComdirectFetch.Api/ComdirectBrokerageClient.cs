@@ -17,7 +17,7 @@ public sealed class ComdirectBrokerageClient(
     {
         using var request = CreateRequest(HttpMethod.Get, "/api/brokerage/clients/user/v3/depots", token);
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await response.EnsureSuccessWithBodyAsync(cancellationToken);
 
         var body = await response.Content.ReadFromJsonAsync<DepotsResponse>(cancellationToken: cancellationToken);
         return body?.Values ?? [];
@@ -30,7 +30,7 @@ public sealed class ComdirectBrokerageClient(
         var path = $"/api/brokerage/v3/depots/{depotId}/positions?with-attr=instrument";
         using var request = CreateRequest(HttpMethod.Get, path, token);
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await response.EnsureSuccessWithBodyAsync(cancellationToken);
 
         return await response.Content.ReadFromJsonAsync<DepotPositionsResponse>(cancellationToken: cancellationToken)
             ?? new DepotPositionsResponse();
@@ -40,6 +40,7 @@ public sealed class ComdirectBrokerageClient(
     {
         var request = new HttpRequestMessage(method, $"{_options.BaseUrl}{path}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Headers.Add("x-http-request-info", requestContext.BuildRequestInfoHeader());
         return request;
     }

@@ -30,12 +30,19 @@ builder.Services.AddSingleton<TransactionRepository>();
 builder.Services.AddSingleton<CategoryRepository>();
 builder.Services.AddSingleton<CategorizationRuleRepository>();
 builder.Services.AddSingleton<SyncLogRepository>();
+builder.Services.AddSingleton<DiagnosticsRepository>();
 builder.Services.AddSingleton<CategorizationService>();
 
 builder.Services.AddHostedService<TokenRefreshBackgroundService>();
-builder.Services.AddHostedService<BalanceFetchService>();
-builder.Services.AddHostedService<PortfolioFetchService>();
-builder.Services.AddHostedService<TransactionFetchService>();
+
+// Als konkrete Singletons registriert (statt nur AddHostedService), damit RunOnceAsync auch
+// manuell über POST /debug/fetch-now angestoßen werden kann, ohne auf das Intervall zu warten.
+builder.Services.AddSingleton<BalanceFetchService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<BalanceFetchService>());
+builder.Services.AddSingleton<PortfolioFetchService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PortfolioFetchService>());
+builder.Services.AddSingleton<TransactionFetchService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<TransactionFetchService>());
 
 var app = builder.Build();
 
@@ -66,6 +73,27 @@ app.MapGet("/health", (ComdirectAuthCoordinator coordinator) => Results.Ok(new
 {
     Version = AppVersion.Current,
     AuthState = coordinator.State.ToString(),
+}));
+
+// Betriebs-/Test-Hilfsmittel: stößt alle drei Datenabrufe sofort an, statt auf die
+// konfigurierten Intervalle zu warten. Berührt weder Session noch TAN.
+app.MapPost("/debug/fetch-now", async (
+    BalanceFetchService balances,
+    PortfolioFetchService portfolio,
+    TransactionFetchService transactions,
+    CancellationToken ct) =>
+{
+    await balances.RunOnceAsync(ct);
+    await portfolio.RunOnceAsync(ct);
+    await transactions.RunOnceAsync(ct);
+    return Results.Ok(new { Message = "Abruf angestoßen, siehe sync_log für Details." });
+});
+
+app.MapGet("/debug/summary", async (DiagnosticsRepository diagnostics, CancellationToken ct) => Results.Ok(new
+{
+    Counts = await diagnostics.GetTableCountsAsync(ct),
+    RecentSyncLog = (await diagnostics.GetRecentSyncLogAsync(ct))
+        .Select(e => new { e.DataKind, e.Status, e.ErrorMessage }),
 }));
 
 app.Run();

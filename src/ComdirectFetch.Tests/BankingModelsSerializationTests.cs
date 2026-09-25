@@ -4,8 +4,9 @@ using ComdirectFetch.Api;
 namespace ComdirectFetch.Tests;
 
 /// <summary>
-/// Regressionstest für die gegen die offizielle comdirect-Doku korrigierten Feldtypen:
-/// Beträge kommen als JSON-String, bookingDate als verschachteltes {"date": "..."}-Objekt.
+/// Regressionstest für die gegen die offizielle comdirect-Doku korrigierten Feldtypen (Beträge
+/// als JSON-String) sowie für den beim Live-Test entdeckten Fall, dass bookingDate in der
+/// echten API-Antwort ein einfacher String ist statt des dokumentierten {"date": "..."}-Objekts.
 /// </summary>
 public class BankingModelsSerializationTests
 {
@@ -21,12 +22,12 @@ public class BankingModelsSerializationTests
     }
 
     [Fact]
-    public void TransactionEntry_liest_verschachteltes_BookingDate_und_flaches_ValutaDate()
+    public void TransactionEntry_liest_BookingDate_als_einfachen_String_wie_in_der_Live_API()
     {
         var json = """
             {
                 "reference": "ref-1",
-                "bookingDate": {"date": "2026-01-15"},
+                "bookingDate": "2026-01-15",
                 "valutaDate": "2026-01-16",
                 "amount": {"value": "-42.50", "unit": "EUR"}
             }
@@ -34,8 +35,24 @@ public class BankingModelsSerializationTests
 
         var transaction = JsonSerializer.Deserialize<TransactionEntry>(json)!;
 
-        Assert.Equal(new DateOnly(2026, 1, 15), transaction.BookingDate.Date);
+        Assert.Equal(new DateOnly(2026, 1, 15), transaction.BookingDate);
         Assert.Equal("2026-01-16", transaction.ValutaDate);
         Assert.Equal(-42.50m, transaction.Amount.Value);
+    }
+
+    [Fact]
+    public void TransactionEntry_liest_BookingDate_auch_als_dokumentiertes_verschachteltes_Objekt()
+    {
+        var json = """
+            {
+                "reference": "ref-2",
+                "bookingDate": {"date": "2026-02-20"},
+                "amount": {"value": "10.00", "unit": "EUR"}
+            }
+            """;
+
+        var transaction = JsonSerializer.Deserialize<TransactionEntry>(json)!;
+
+        Assert.Equal(new DateOnly(2026, 2, 20), transaction.BookingDate);
     }
 }

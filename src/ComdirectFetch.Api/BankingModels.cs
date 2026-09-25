@@ -63,9 +63,10 @@ public sealed class TransactionEntry
     [JsonPropertyName("reference")]
     public required string Reference { get; init; }
 
-    /// <summary>Verschachteltes Objekt {"date": "yyyy-MM-dd"} – kein einfacher String (anders als valutaDate).</summary>
+    /// <summary>Laut Doku ein {"date": "..."}-Objekt, in der Live-API bisher als einfacher String beobachtet – FlexibleDateConverter akzeptiert beides.</summary>
     [JsonPropertyName("bookingDate")]
-    public required DateWrapper BookingDate { get; init; }
+    [JsonConverter(typeof(FlexibleDateConverter))]
+    public DateOnly? BookingDate { get; init; }
 
     [JsonPropertyName("valutaDate")]
     public string? ValutaDate { get; init; }
@@ -87,12 +88,6 @@ public sealed class TransactionEntry
 
     [JsonPropertyName("creditor")]
     public AccountInformation? Creditor { get; init; }
-}
-
-public sealed class DateWrapper
-{
-    [JsonPropertyName("date")]
-    public required DateOnly Date { get; init; }
 }
 
 public sealed class AccountInformation

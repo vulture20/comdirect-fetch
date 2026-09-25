@@ -43,7 +43,7 @@ public sealed class ComdirectAuthClient(
     {
         using var request = CreateRequest(HttpMethod.Get, "/api/session/clients/user/v1/sessions", token);
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await response.EnsureSuccessWithBodyAsync(cancellationToken);
 
         var sessions = await response.Content.ReadFromJsonAsync<SessionInfo[]>(cancellationToken: cancellationToken);
         if (sessions is not { Length: > 0 })
@@ -78,7 +78,7 @@ public sealed class ComdirectAuthClient(
         });
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await response.EnsureSuccessWithBodyAsync(cancellationToken);
 
         if (!response.Headers.TryGetValues("x-once-authentication-info", out var values))
         {
@@ -127,7 +127,7 @@ public sealed class ComdirectAuthClient(
         }
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await response.EnsureSuccessWithBodyAsync(cancellationToken);
     }
 
     /// <summary>
@@ -178,7 +178,7 @@ public sealed class ComdirectAuthClient(
         }
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await response.EnsureSuccessWithBodyAsync(cancellationToken);
 
         return await response.Content.ReadFromJsonAsync<OAuthToken>(cancellationToken: cancellationToken)
             ?? throw new InvalidOperationException("comdirect hat keinen Token zurückgegeben.");
@@ -188,6 +188,7 @@ public sealed class ComdirectAuthClient(
     {
         var request = new HttpRequestMessage(method, $"{_options.BaseUrl}{path}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Headers.Add("x-http-request-info", requestContext.BuildRequestInfoHeader());
         return request;
     }

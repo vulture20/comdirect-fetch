@@ -4,6 +4,45 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.5.0 – Pagination und Fehlerdiagnose
+
+- HTTP-Fehlerantworten werden jetzt inklusive Response-Body geloggt (comdirect liefert dort
+  präzise Fehlercodes/-texte) statt nur den nackten Statuscode zu werfen.
+- Dadurch gefunden und behoben: `paging-first > 0` scheitert mit 422 ("Paging is only valid
+  for booked account transactions"), wenn `transactionState` nicht explizit auf `BOOKED`
+  gesetzt ist (Default ist `BOTH`). Passt ohnehin zu unserem Modell – nur gebuchte,
+  endgültige Umsätze werden historisiert.
+- Live bestätigt: Pagination funktioniert über mehrere Seiten (ein Testkonto: 220 Umsätze
+  über 11 Seiten erfolgreich abgerufen).
+- Kleine Pausen zwischen Pagination-Seiten und zwischen Konten ergänzt, nachdem intensives
+  Testen zu HTTP 429 (Rate-Limit) geführt hat.
+
+## 0.4.0 – Weitere Live-Test-Funde
+
+- Dapper schreibt Enum-Parameter standardmäßig als Zahl; die MySQL-ENUM-Spalten erwarten
+  aber Text – `sync_log`-Inserts scheiterten mit „Data truncated for column 'status'“.
+  Behoben durch explizite String-Konvertierung in `SyncLogRepository` (ein generischer
+  Dapper-TypeHandler-Ansatz wurde zunächst versucht, erwies sich aber als wirkungslos für
+  Parameter, da Dapper Enum-Parameter intern schon vor der Handler-Prüfung auf ihren
+  zugrunde liegenden Zahlentyp reduziert – wieder entfernt).
+- `bookingDate` kommt in der echten API als einfacher String, nicht wie dokumentiert als
+  `{"date": ...}`-Objekt. `FlexibleDateConverter` akzeptiert jetzt beide Formen defensiv.
+- Neuer Diagnose-Endpoint `GET /debug/summary` (Zeilenanzahl je Tabelle + letzte
+  `sync_log`-Einträge) zur Verifikation ohne direkten DB-Zugriff.
+- Live bestätigt: Salden (3 Konten) und Depotübersicht (1 Depot, Positionen inkl. ISIN/Name
+  über `with-attr=instrument`) funktionieren vollständig gegen die echte API.
+
+## 0.3.0 – Erste Live-Tests gegen die echte comdirect-API
+
+- Fehlenden `Accept`-Header ergänzt (comdirect antwortete sonst mit 406 Not Acceptable) –
+  in allen drei API-Clients.
+- Hintergrunddienste starten jetzt sofort beim Start statt erst nach einem vollen Intervall
+  zu warten (`RunOnceAsync`-Refactor, wiederverwendbar).
+- Neuer manueller Trigger-Endpoint `POST /debug/fetch-now` für Tests ohne Wartezeit auf das
+  konfigurierte Intervall.
+- Login/Session/TAN-Flow erfolgreich gegen die echte API verifiziert (mehrere erfolgreiche
+  End-to-End-Durchläufe inkl. PushTAN-Freigabe).
+
 ## 0.2.0 – Gegen offizielle comdirect-Doku verifiziert
 
 Der Nutzer hat die offizielle comdirect REST API Dokumentation (Swagger, Postman-Collection,
