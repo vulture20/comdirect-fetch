@@ -32,6 +32,7 @@ Verwendung:
   ${SCRIPT_NAME} auth start
   ${SCRIPT_NAME} auth confirm [TAN_CODE]
   ${SCRIPT_NAME} fetch-now
+  ${SCRIPT_NAME} recategorize
   ${SCRIPT_NAME} help
 
 Befehle:
@@ -47,6 +48,10 @@ Befehle:
   fetch-now       Sofortigen Abruf aller Datenarten anstoßen (POST /debug/fetch-now),
                   ohne auf die konfigurierten Intervalle zu warten. Berührt keine
                   Session/TAN, gefahrlos wiederholbar.
+  recategorize    Alle nicht manuell kategorisierten Umsätze mit dem aktuellen Regelsatz
+                  neu einordnen (POST /debug/recategorize), z. B. nach einer Erweiterung
+                  oder Korrektur der Kategorisierungsregeln. Berührt keine Session/TAN,
+                  gefahrlos wiederholbar; manuelle Zuordnungen bleiben unverändert.
   help            Diese Hilfe anzeigen.
 
 Umgebungsvariable COMDIRECT_FETCH_URL überschreibt die Basis-URL
@@ -179,6 +184,15 @@ cmd_fetch_now() {
   echo "Details: ${SCRIPT_NAME} status"
 }
 
+cmd_recategorize() {
+  http_request POST /debug/recategorize
+  if [[ "$HTTP_CODE" != "200" ]]; then
+    echo "Fehler (HTTP ${HTTP_CODE}): ${HTTP_BODY}" >&2
+    exit 1
+  fi
+  echo "$HTTP_BODY" | jq -r '.message'
+}
+
 require_deps
 
 case "${1:-help}" in
@@ -196,6 +210,7 @@ case "${1:-help}" in
     esac
     ;;
   fetch-now) cmd_fetch_now ;;
+  recategorize) cmd_recategorize ;;
   help|-h|--help) usage ;;
   *) echo "Unbekannter Befehl: ${1}. Siehe '${SCRIPT_NAME} help'." >&2; exit 64 ;;
 esac
