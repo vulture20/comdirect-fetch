@@ -151,9 +151,9 @@ Rate-Limiting (HTTP 429) wird seit 0.6.0 mit echtem Retry/Backoff behandelt (`Co
 Polly), zusätzlich zu proaktiven kurzen Pausen zwischen Requests – siehe `CHANGELOG.md`.
 
 **Bekannte Restrisiken**: Verhalten bei sehr großen Depots/vielen Konten im Dauerbetrieb ist
-nur mit den aktuellen Testdaten verifiziert, nicht an echten Großvolumina. Fehlertexte mit
-Umlauten wurden in den Logs teils falsch codiert dargestellt (rein kosmetisch, noch nicht
-untersucht).
+nur mit den aktuellen Testdaten verifiziert, nicht an echten Großvolumina. Die früher teils
+falsch codiert dargestellten Umlaute in geloggten Fehlertexten (Issue #8) sind behoben – siehe
+`CHANGELOG.md`.
 
 ## Grafana-Dashboards
 

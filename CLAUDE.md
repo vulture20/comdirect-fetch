@@ -167,9 +167,17 @@ Do this as part of the change itself, not only when the user asks for it.
   encrypted blob is stored, never the key itself.
 - Rate limiting has real retry/backoff now (see above) but is untested at production data
   volumes (large depots, many accounts, long transaction history).
-- Error message bodies from comdirect can appear with garbled umlauts in logs (cosmetic,
-  root cause — likely a charset/encoding mismatch somewhere in the logging pipeline, not
-  necessarily in the app itself — not yet investigated).
+- Umlaut garbling in logged comdirect error bodies (Issue #8) is fixed. Root cause confirmed by
+  reproduction (not guessed): comdirect's error response bytes are actually Latin-1/ISO-8859-1
+  encoded with no reliable charset header, but .NET's default `ReadAsStringAsync` assumes UTF-8
+  when no charset is given and silently replaces invalid byte sequences with U+FFFD (`�`) instead
+  of erroring or trying another encoding — confirmed by feeding real Latin-1 bytes for
+  "überschritten" through .NET's actual decoder and reproducing the exact `�berschritten`
+  symptom from the issue. Fix: `ComdirectFetch.Domain.TextDecoding.DecodeUtf8WithLatin1Fallback`
+  (pure, unit-tested) tries strict UTF-8 first and only falls back to Latin-1 on an actual decode
+  failure, so genuinely UTF-8 responses are unaffected. Used in
+  `HttpResponseExtensions.EnsureSuccessWithBodyAsync` (Api) instead of the default
+  `ReadAsStringAsync` charset handling.
 - The four comdirect credentials now get better-than-plaintext-in-.env handling (v0.12.0,
   `docs/konzept.md` §10, distinct from the session-token persistence above — that's the token,
   this is the login credentials themselves). ClientId/ClientSecret: Docker Compose file secrets
