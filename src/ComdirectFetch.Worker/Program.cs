@@ -96,6 +96,21 @@ app.MapGet("/debug/summary", async (DiagnosticsRepository diagnostics, Cancellat
         .Select(e => new { e.DataKind, e.Status, e.ErrorMessage }),
 }));
 
+// Betriebs-Hilfsmittel: wendet die Kategorisierungsregeln erneut auf alle nicht manuell
+// kategorisierten Umsätze an - z. B. nach einer Erweiterung/Korrektur der Regeln
+// (KONZEPT.md Abschnitt 6/9). Berührt weder Session noch TAN, gefahrlos wiederholbar;
+// manuell korrigierte Zuordnungen werden nie überschrieben.
+app.MapPost("/debug/recategorize", async (CategorizationService categorization, CancellationToken ct) =>
+{
+    var (total, updated) = await categorization.RecategorizeAllAsync(ct);
+    return Results.Ok(new
+    {
+        Message = $"Neu-Kategorisierung abgeschlossen: {updated}/{total} Kontoumsätze aktualisiert.",
+        Total = total,
+        Updated = updated,
+    });
+});
+
 app.Run();
 
 internal sealed record TanConfirmRequest(string? TanCode);

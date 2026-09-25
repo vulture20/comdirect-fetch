@@ -109,7 +109,7 @@ Five projects under `src/`, referencing each other in one direction only
 
 `scripts/comdirectctl.sh` (bash, needs `curl` + `jq`) wraps the TAN flow and status
 endpoints for humans and scripts alike: `auth start`/`auth confirm`, `status` (add `--json`
-for machine consumption), `fetch-now`. Exit codes are meaningful (0 authenticated, 1 needs
+for machine consumption), `fetch-now`, `recategorize`. Exit codes are meaningful (0 authenticated, 1 needs
 attention, 2 unreachable, 3 missing deps, 64 bad usage) so it's usable in monitoring/cron,
 not just interactively. If you touch this script, know the trap gotcha it already hit once:
 under `set -e`, if the last command in an `EXIT` trap evaluates false (e.g. `[[ cond ]] &&

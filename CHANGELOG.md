@@ -4,6 +4,49 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.8.1 – Zeilenumbruch-Fallstrick bei zwei Regeln aus 0.8.0 behoben
+
+Nach dem Deploy von 0.8.0 lief der Dienst länger authentifiziert weiter und sammelte 429
+echte Kontoumsätze (statt der ursprünglichen 16). Die Neu-Kategorisierung (`/debug/recategorize`)
+gegen diesen größeren Bestand deckte auf: Die Muster "Humble Bundle" und "Headline - Noth,
+Schneider" trafen nie. Ursache: comdirect bricht `remittanceInfo` alle 35 Zeichen um und fügt
+die zweistellige Zeilennummer **ohne Leerzeichen mitten ins Wort** ein (`Humble B02undle`,
+`Headline02 - Noth, Schneider` bzw. im zweiten Vorkommen `Headline - Noth, Sch04neider`) – der
+Mehrwort-Ausdruck steht dadurch nie zusammenhängend im Text. Behoben durch
+`db/migrations/0005_fix_paypal_merchant_patterns.sql`: kürzere Ein-Wort-Muster ("Humble",
+"Headline"), die in beiden Vorkommen unzerteilt bleiben. 0004 selbst bleibt unverändert
+(append-only) – 0005 korrigiert die betroffenen Regeln per `UPDATE`. Tests entsprechend auf
+den echten, umgebrochenen Text umgestellt statt einer idealisierten Fassung.
+
+Bei größerer Kontrollstichprobe (429 statt 16 Umsätze) liegt die Fallback-Quote jetzt bei
+71 % (304/429 "Sonstige Ausgabe") statt der ursprünglich beobachteten 81 % – die neuen Regeln
+tragen bei signifikantem Datenvolumen (z. B. 30 Gaming/Unterhaltung-, 22 Lebensmittel-Treffer).
+Weitere Muster für die verbleibenden Fallback-Umsätze sind nicht Teil dieser Änderung.
+
+## 0.8.0 – Kategorisierungsregeln anhand echter Umsatzdaten erweitert, Neu-Kategorisierung
+
+- Erste 16 echte Kontoumsätze ausgewertet: 13/16 (81 %) landeten mangels passender Regel im
+  Vorzeichen-Fallback ("Sonstige Ausgabe"), eine Zinsgutschrift wurde fälschlich als
+  "Sonstige Einnahme" statt "Zinsen/Dividenden" eingeordnet (dafür existierte bisher gar
+  keine Regel). Behoben durch `db/migrations/0004_extend_categorization_rules.sql`: 7 neue,
+  spezifischere Kategorien (`Gaming/Unterhaltung`, `Restaurants/Cafés`, `Telekommunikation`,
+  `Altersvorsorge`, `Öffentlicher Nahverkehr`, `Apotheke/Gesundheit`, `Mode/Bekleidung`) plus
+  14 neue Freitext-Regeln für die erkannten Händler/Muster sowie die fehlende
+  Zinsen/Dividenden-Regel. Eine Buchung (generische Rechnungsformulierung ohne erkennbaren
+  Händlernamen) bleibt bewusst unbehandelt und im Fallback, statt zu raten.
+- PayPal-geroutete Buchungen (Humble Bundle, CinemaxX, Headline) matchen bewusst den
+  Händlernamen im Text, nicht das gemeinsame PayPal-Routing-Präfix – das ist PayPals eigene
+  ID, nicht händlerspezifisch, und hätte künftige fremde PayPal-Zahlungen fälschlich in
+  dieselbe Kategorie gesteckt. Gleiches Prinzip bei `SumUp` (generischer Terminal-Anbieter):
+  Muster ist der konkrete Café-Name, nicht der SumUp-Präfix.
+- Neuer, generischer Neu-Kategorisierungs-Mechanismus (KONZEPT.md Abschnitt 6/9, bisher
+  offener Punkt): `TransactionRepository.GetAllNonManuallyCategorizedAsync` liefert alle
+  nicht manuell kategorisierten Umsätze unabhängig vom aktuellen `category_id`-Wert (statt
+  nur `category_id IS NULL` wie `GetUncategorizedAsync`); `CategorizationService.RecategorizeAllAsync`
+  wendet den aktuellen Regelsatz erneut darauf an. Erreichbar über `POST /debug/recategorize`
+  und `comdirectctl.sh recategorize`, wiederverwendbar für jede künftige Regeländerung, nicht
+  nur den aktuellen Bestand.
+
 ## 0.7.0 – Phase 1/2 der Auswertungen abgeschlossen, Bedien-Skript
 
 - **Vermögensentwicklung** (Phase 1 vervollständigt): neues Panel im Salden-Dashboard,
