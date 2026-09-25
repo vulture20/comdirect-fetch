@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ComdirectFetch.Api/ComdirectFetch.Api.csproj" />
+    <Project Path="src/ComdirectFetch.Data/ComdirectFetch.Data.csproj" />
+    <Project Path="src/ComdirectFetch.Domain/ComdirectFetch.Domain.csproj" />
+    <Project Path="src/ComdirectFetch.Tests/ComdirectFetch.Tests.csproj" />
+    <Project Path="src/ComdirectFetch.Worker/ComdirectFetch.Worker.csproj" />
+  </Folder>
+</Solution>

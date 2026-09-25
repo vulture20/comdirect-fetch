@@ -1,0 +1,15 @@
+# .NET build output
+bin/
+obj/
+*.user
+
+# Echte Zugangsdaten dürfen nicht ins Repository (KONZEPT.md Abschnitt 8)
+.env
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# OS
+.DS_Store

@@ -1,0 +1,21 @@
+# MariaDB läuft extern beim Nutzer und ist bewusst nicht Teil dieser Compose-Datei
+# (KONZEPT.md Abschnitt 2). Grafana ist optional (Abschnitt 2/6).
+
+services:
+  fetch:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    env_file:
+      - ../.env
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro

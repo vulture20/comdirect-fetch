@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\ComdirectFetch.Domain\ComdirectFetch.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.1.89" />
+    <PackageReference Include="dbup-mysql" Version="6.1.0" />
+    <PackageReference Include="MySqlConnector" Version="2.6.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- db/migrations/ ist die einzige Quelle für das DB-Schema (KONZEPT.md Abschnitt 7/8);
+         hier nur eingebunden, damit DbUp die Skripte zur Laufzeit ausführen kann. -->
+    <EmbeddedResource Include="..\..\db\migrations\*.sql" LinkBase="Migrations" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
