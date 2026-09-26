@@ -163,7 +163,9 @@ strukturierten Empfänger-/Auftraggeber-Namen (`CounterpartyName`) geprüft werd
 echte Überweisungen, deren Buchungstext nur den Verwendungszweck enthält. Ein Button „Nicht
 kategorisiert" (seit 0.18.0) listet alle Umsätze ohne echte Kategorisierung (keine Kategorie
 oder nur der Vorzeichen-Fallback) – gute Kandidaten für neue Regeln, ohne manuell in der DB
-nachsehen zu müssen. Jede Regel kann außerdem einen optionalen Freitext-Kommentar tragen (seit
+nachsehen zu müssen. Einzelne Umsätze lassen sich dort direkt einer Kategorie zuordnen (seit
+0.21.0), ohne dass dafür eine neue Regel nötig ist – sinnvoll für Einzelposten, für die sich
+keine allgemeine Regel lohnt. Jede Regel kann außerdem einen optionalen Freitext-Kommentar tragen (seit
 0.19.0) – etwa warum sie existiert oder welcher Buchungstext sie ausgelöst hat –, direkt in der
 Regeltabelle editierbar. Über den „Bearbeiten"-Button pro Regel (seit 0.20.0) lassen sich auch
 Muster, Feld, Kategorie und Priorität einer bestehenden Regel nachträglich ändern, statt sie

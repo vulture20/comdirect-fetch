@@ -511,6 +511,17 @@ Zusätzlich ein Dashboard-Link „Kategorien/Regeln bearbeiten →" im Cashflow-
 (`grafana/dashboards/cashflow.json`), der `/admin/rules/` in einem neuen Tab öffnet – von dort,
 wo eine große Fallback-Menge beim Durchsehen der Finanzen typischerweise zuerst auffällt.
 
+**Direktes Zuordnen (seit 0.21.0)**: pro Zeile eine Kategorie-Auswahl plus „Zuordnen"-Button –
+nicht jeder Einzelposten rechtfertigt eine eigene, dauerhafte Regel. Neuer Endpunkt
+`PUT /admin/rules/api/transactions/{id}/category` (Body `{ categoryId }`) ruft das bereits
+bestehende `TransactionRepository.UpdateCategoryAsync(id, categoryId, manuallyCategorized: true)`
+auf – bisher nur intern von `CategorizationService` genutzt. Die feste Markierung als manuell
+ist hier bewusst nicht optional, da genau das der Zweck dieser Aktion ist: künftige
+Regel-Anwendungen (`CategorizeNewTransactionsAsync`/`RecategorizeAllAsync`, beide basierend auf
+`GetUncategorizedAsync`/`GetAllNonManuallyCategorizedAsync`) fassen diesen Umsatz danach nicht
+mehr an. Eine unbekannte `categoryId` scheitert am bestehenden Fremdschlüssel
+(`fk_transactions_category`) und wird als HTTP 400 statt eines rohen DB-Fehlers zurückgegeben.
+
 ### Freitext-Kommentar je Regel (seit 0.19.0)
 
 Neue optionale Spalte `comment` auf `categorization_rules` (`VARCHAR(500) NULL`,

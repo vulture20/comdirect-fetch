@@ -399,9 +399,38 @@ app.MapGet("/admin/rules/api/uncategorized", async (
             t.TransactionType,
             t.CounterpartyName,
             t.Amount,
+            t.CategoryId,
             CurrentCategory = t.CategoryId is { } catId ? categoryNames.GetValueOrDefault(catId) : null,
         }),
     });
+});
+
+// Direktes Zuordnen einer Kategorie zu einem einzelnen, noch nicht kategorisierten Umsatz -
+// nicht jeder Einzelposten rechtfertigt eine neue, dauerhafte Regel. Setzt manually_categorized =
+// true, damit CategorizeNewTransactionsAsync/RecategorizeAllAsync diese Zuordnung danach nie
+// wieder überschreiben (beide basieren auf GetUncategorizedAsync/GetAllNonManuallyCategorizedAsync,
+// die manuell zugeordnete Umsätze gar nicht erst liefern).
+app.MapPut("/admin/rules/api/transactions/{id:long}/category", async (
+    long id,
+    TransactionRepository transactions,
+    SetTransactionCategoryRequest body,
+    CancellationToken ct) =>
+{
+    if (body.CategoryId is null)
+    {
+        return Results.BadRequest(new { Message = "categoryId ist erforderlich." });
+    }
+
+    try
+    {
+        await transactions.UpdateCategoryAsync(id, body.CategoryId, manuallyCategorized: true, ct);
+    }
+    catch (MySqlConnector.MySqlException ex) when (ex.Number == 1452) // FK-Verletzung: unbekannte categoryId
+    {
+        return Results.BadRequest(new { Message = "Unbekannte categoryId." });
+    }
+
+    return Results.Ok();
 });
 
 // KONZEPT.md Abschnitt 10 B: Bootstrap-Schritt für Zugangsnummer/PIN - verschlüsselt sie mit
@@ -453,3 +482,4 @@ internal sealed record SetCredentialsRequest(string? Username, string? Password)
 internal sealed record CategoryRequest(string? Name, string? Type);
 internal sealed record RuleRequest(string? Pattern, string? MatchField, long? CategoryId, int Priority, string? Comment);
 internal sealed record RulePreviewRequest(string? Pattern, string? MatchField);
+internal sealed record SetTransactionCategoryRequest(long? CategoryId);
