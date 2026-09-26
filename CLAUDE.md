@@ -228,16 +228,23 @@ Do this as part of the change itself, not only when the user asks for it.
   crash mid-run just gets caught up by the next run. Live-verified against the real DB using
   synthetic rows dated years outside the real data's range, confirming both consolidation and
   deletion work correctly and real data is never touched.
-- No UI/CRUD for `categories`/`categorization_rules` yet — both are read-only in code today
-  (`CategoryRepository`/`CategorizationRuleRepository` only have `GetAll*`), every past change
-  went through a new append-only migration. A design is written up in `docs/konzept.md` §12: a
-  small worker-hosted web admin page under `/admin/` (table editor, no build toolchain/framework)
-  with CRUD endpoints, a real-data dry-run (single candidate rule preview + full simulate-before-
-  commit diff, both reusing the already-pure `CategorizationLogic.Categorize`), HTTP Basic Auth
-  via a new `Admin__Password` (deliberately stricter than the unauthenticated `/debug/*`/`/auth/*`
-  endpoints, since this writes durable config rather than triggering a one-off action), and
-  server-side protection against deleting/renaming the three code-anchored special category names
-  (`Intern/Neutral`, `Sonstige Einnahme`, `Sonstige Ausgabe`) — concept only, not yet implemented.
+- UI/CRUD for `categories`/`categorization_rules` (v0.16.0, `docs/konzept.md` §12, Issue #13):
+  small worker-hosted web admin page at `wwwroot/admin/rules/index.html`, served + protected under
+  `/admin/rules/*` — deliberately **not** bare `/admin/*`, since that collides with the existing,
+  intentionally-unauthenticated `POST /admin/credentials` (§10 B, different trust level). Table
+  editor calling new CRUD endpoints (`CategoryRepository`/`CategorizationRuleRepository` gained
+  `CreateAsync`/`UpdateAsync`/`DeleteAsync`/`GetByIdAsync`, previously read-only). Real-data
+  dry-run: `POST /admin/rules/api/rules/preview` (single candidate pattern vs. real transactions,
+  independent of priority) and `POST /admin/rules/api/rules/simulate`
+  (`CategorizationService.SimulateRecategorizationAsync` — same computation as
+  `RecategorizeAllAsync` minus the write, full diff), both reusing the already-pure
+  `CategorizationLogic.Categorize`. HTTP Basic Auth via `Admin__Password`
+  (`ComdirectFetch.Worker.AdminAuth`, unit-tested, constant-time compare) — unset means
+  `/admin/rules/*` returns 503, not unprotected; deliberately stricter than the unauthenticated
+  `/debug/*`/`/auth/*`/`/admin/credentials` endpoints since this writes durable config.
+  `ComdirectFetch.Domain.ProtectedCategoryNames` (`Intern/Neutral`, `Sonstige Einnahme`,
+  `Sonstige Ausgabe`) is checked server-side to block deleting/renaming those three — shared
+  between `CategorizationService` and the new endpoints so they can't drift.
 - Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
   — check there first before guessing at API behavior, but confirm against a real request
   when in doubt: the docs have been wrong before (see above).
