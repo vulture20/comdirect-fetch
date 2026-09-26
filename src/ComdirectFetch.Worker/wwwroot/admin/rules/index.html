@@ -85,6 +85,13 @@
 <div id="globalMsg" class="msg"></div>
 
 <div class="panel">
+  <h2>Nicht kategorisiert</h2>
+  <p class="hint" style="margin-top:-6px">Umsätze ohne echte Kategorisierung: gar keine Kategorie oder nur der Vorzeichen-Fallback (<code>Sonstige Einnahme</code>/<code>Sonstige Ausgabe</code>) - gute Kandidaten für eine neue Regel weiter unten.</p>
+  <button onclick="loadUncategorized()">Laden</button>
+  <div id="uncategorizedResult"></div>
+</div>
+
+<div class="panel">
   <h2>Kategorien</h2>
   <table>
     <thead>
@@ -369,6 +376,33 @@ async function applyRecategorize() {
     await simulate();
   } catch (e) {
     showMsg(globalMsg, 'Fehler beim Anwenden: ' + e.message, 'error');
+  }
+}
+
+async function loadUncategorized() {
+  const resultEl = document.getElementById('uncategorizedResult');
+  resultEl.innerHTML = '<p class="muted">Lädt...</p>';
+  try {
+    const result = await api('GET', '/uncategorized');
+    if (result.totalCount === 0) {
+      resultEl.innerHTML = '<p class="muted">Keine unkategorisierten Umsätze.</p>';
+      return;
+    }
+    const rows = result.transactions.map(t => `
+      <tr>
+        <td>${escapeHtml(t.bookingDate)}</td>
+        <td>${escapeHtml(t.bookingText || t.transactionType || '')}</td>
+        <td>${escapeHtml(t.counterpartyName || '')}</td>
+        <td>${t.amount}</td>
+        <td>${escapeHtml(t.currentCategory || '(keine)')}</td>
+      </tr>
+    `).join('');
+    resultEl.innerHTML = `
+      <p class="muted">${result.totalCount} Treffer${result.totalCount > result.transactions.length ? ' (zeige die ersten ' + result.transactions.length + ')' : ''}:</p>
+      <table><thead><tr><th>Datum</th><th>Buchungstext/Umsatztyp</th><th>Empfänger/Auftraggeber</th><th>Betrag</th><th>Aktuelle Kategorie</th></tr></thead><tbody>${rows}</tbody></table>
+    `;
+  } catch (e) {
+    resultEl.innerHTML = `<p class="msg error" style="display:block">Fehler: ${escapeHtml(e.message)}</p>`;
   }
 }
 

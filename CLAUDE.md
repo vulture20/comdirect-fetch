@@ -249,7 +249,14 @@ Do this as part of the change itself, not only when the user asks for it.
   `/debug/*`/`/auth/*`/`/admin/credentials` endpoints since this writes durable config.
   `ComdirectFetch.Domain.ProtectedCategoryNames` (`Intern/Neutral`, `Sonstige Einnahme`,
   `Sonstige Ausgabe`) is checked server-side to block deleting/renaming those three — shared
-  between `CategorizationService` and the new endpoints so they can't drift.
+  between `CategorizationService` and the new endpoints so they can't drift. v0.17.0 added a
+  third `RuleMatchField.CounterpartyName` (matches `transactions.counterparty_name`, sourced
+  from comdirect's `remitter`/`deptor`/`creditor.holderName` — always fetched, previously
+  discarded; `TransactionRepository.InsertIfNewAsync` is now an upsert that backfills just that
+  column on conflict, never touching `category_id`/`manually_categorized`). v0.18.0 added
+  `GET /admin/rules/api/uncategorized` (transactions with no category or only the sign-based
+  fallback, for finding rule candidates) plus a Grafana dashboard link on `cashflow.json`
+  pointing at `/admin/rules/`.
 - Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
   — check there first before guessing at API behavior, but confirm against a real request
   when in doubt: the docs have been wrong before (see above).

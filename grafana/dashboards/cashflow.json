@@ -9,6 +9,19 @@
   "time": { "from": "now-6M", "to": "now" },
   "refresh": "5m",
   "tags": ["comdirect-fetch"],
+  "links": [
+    {
+      "title": "Kategorien/Regeln bearbeiten →",
+      "tooltip": "Öffnet die comdirect-fetch Admin-Oberfläche (nicht kategorisierte Umsätze, Kategorien/Regeln, Testen gegen Echtdaten). Setzt Admin__Password voraus (HTTP Basic Auth). URL geht von Standardport 8750 auf demselben Host aus - bei abweichender Topologie hier anpassen und per scripts/grafana-setup.sh dashboards erneut pushen.",
+      "type": "link",
+      "icon": "external link",
+      "url": "http://localhost:8750/admin/rules/",
+      "targetBlank": true,
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": false
+    }
+  ],
   "panels": [
     {
       "id": 1,
