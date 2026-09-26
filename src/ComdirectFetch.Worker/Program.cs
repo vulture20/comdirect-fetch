@@ -364,6 +364,45 @@ app.MapPost("/admin/rules/api/rules/simulate", async (
     });
 });
 
+// Listet Umsätze ohne "echte" Kategorisierung: entweder gar keine Kategorie (category_id IS
+// NULL - kommt praktisch kaum vor, da der Vorzeichen-Fallback sofort greift) oder eine der
+// beiden Vorzeichen-Fallback-Kategorien (Sonstige Einnahme/Ausgabe) - genau die Fälle, für die
+// eine neue Regel sinnvoll wäre. Grundlage für den "Nicht kategorisiert"-Button in der
+// Admin-Oberfläche, damit man nicht mehr manuell in der DB nachsehen muss, um Kandidaten für
+// neue Regeln zu finden.
+app.MapGet("/admin/rules/api/uncategorized", async (
+    TransactionRepository transactions,
+    CategoryRepository categories,
+    CancellationToken ct) =>
+{
+    var allCategories = await categories.GetAllAsync(ct);
+    var categoryNames = allCategories.ToDictionary(c => c.Id, c => c.Name);
+    var fallbackIds = allCategories
+        .Where(c => c.Name is ProtectedCategoryNames.FallbackIncome or ProtectedCategoryNames.FallbackExpense)
+        .Select(c => c.Id)
+        .ToHashSet();
+
+    var relevant = (await transactions.GetAllAsync(ct))
+        .Where(t => t.CategoryId is null || fallbackIds.Contains(t.CategoryId.Value))
+        .OrderByDescending(t => t.BookingDate)
+        .ToList();
+
+    return Results.Ok(new
+    {
+        TotalCount = relevant.Count,
+        Transactions = relevant.Take(100).Select(t => new
+        {
+            t.Id,
+            t.BookingDate,
+            t.BookingText,
+            t.TransactionType,
+            t.CounterpartyName,
+            t.Amount,
+            CurrentCategory = t.CategoryId is { } catId ? categoryNames.GetValueOrDefault(catId) : null,
+        }),
+    });
+});
+
 // KONZEPT.md Abschnitt 10 B: Bootstrap-Schritt für Zugangsnummer/PIN - verschlüsselt sie mit
 // dem dedizierten, dateibasierten Schlüssel (Comdirect__CredentialKeyFilePath) und legt sie in
 // credential_store ab. Danach können Comdirect__Username/Comdirect__Password aus .env entfernt

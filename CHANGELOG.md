@@ -4,6 +4,26 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.18.0 – "Nicht kategorisiert"-Übersicht in der Admin-Oberfläche + Grafana-Link
+
+Neuer Button „Nicht kategorisiert" auf der Admin-Oberfläche (`/admin/rules/`, Issue #13):
+listet Umsätze ohne echte Kategorisierung – entweder gar keine Kategorie oder nur der
+Vorzeichen-Fallback (`Sonstige Einnahme`/`Sonstige Ausgabe`) – inkl. Buchungstext, Empfänger/
+Auftraggeber und Betrag, sortiert nach Buchungsdatum absteigend, begrenzt auf 100 von insgesamt
+angezeigten Treffern. Neuer Endpunkt `GET /admin/rules/api/uncategorized`. Löst das bisherige
+manuelle Nachsehen in der DB ab, um Kandidaten für neue Regeln zu finden (siehe 0.17.0).
+
+Zusätzlich ein Dashboard-Link „Kategorien/Regeln bearbeiten →" im Cashflow-Dashboard
+(`grafana/dashboards/cashflow.json`), der `/admin/rules/` in einem neuen Tab öffnet – von dort,
+wo man beim Durchsehen der Finanzen eine große „Sonstige Ausgabe"/„Sonstige Einnahme"-Menge
+bemerkt, direkt zur Admin-Oberfläche. URL geht vom Standardport 8750 auf demselben Host aus wie
+Grafana; bei abweichender Netzwerktopologie im Dashboard-JSON anzupassen und erneut per
+`scripts/grafana-setup.sh dashboards` zu pushen.
+
+Live verifiziert: 289 aktuell unkategorisierte Umsätze über den neuen Endpunkt korrekt
+aufgelistet (Paginierung auf 100 bestätigt), Dashboard-Link nach dem Push per Grafana-API
+bestätigt.
+
 ## 0.17.0 – Kategorisierungsregeln auch gegen den Empfänger/Auftraggeber
 
 Manche Buchungen ließen sich nicht korrekt kategorisieren, weil der Empfänger-Name nur

@@ -264,6 +264,11 @@ Diese Pflege übernimmt Claude Code während der Entwicklung selbstständig als 
   Händlername dagegen meist schon im Buchungstext. Alt-Umsätze werden beim nächsten regulären
   Abruf automatisch nachträglich befüllt (Upsert statt `INSERT IGNORE`, betrifft ausschließlich
   `counterparty_name`, nie die Kategorisierung). Live verifiziert. Erledigt.
+- **„Nicht kategorisiert"-Übersicht + Grafana-Link** (Abschnitt 12): umgesetzt (siehe
+  `CHANGELOG.md` 0.18.0) – neuer Button auf der Admin-Oberfläche listet Umsätze ohne echte
+  Kategorisierung (`GET /admin/rules/api/uncategorized`), löst das manuelle DB-Nachsehen aus
+  0.17.0 ab. Zusätzlich ein Dashboard-Link im Cashflow-Dashboard, der `/admin/rules/` direkt
+  öffnet. Live verifiziert (289 Treffer korrekt aufgelistet). Erledigt.
 
 ## 10. Sichere Ablage der comdirect-Zugangsdaten (umgesetzt in 0.12.0)
 
@@ -493,6 +498,17 @@ Zwei Ebenen, beide rein lesend, schreiben nichts:
   (alte → neue Kategorie je betroffenem Umsatz) zurück. Die Web-Oberfläche zeigt diesen Diff vor
   dem eigentlichen Commit; „Jetzt anwenden" löst das bereits bestehende
   `POST /debug/recategorize` aus, das dann tatsächlich schreibt.
+
+### „Nicht kategorisiert"-Übersicht (seit 0.18.0)
+
+Button auf der Admin-Oberfläche, der `GET /admin/rules/api/uncategorized` aufruft: listet
+Umsätze ohne echte Kategorisierung (keine Kategorie oder nur der Vorzeichen-Fallback `Sonstige
+Einnahme`/`Sonstige Ausgabe`), sortiert nach Buchungsdatum absteigend, begrenzt auf 100 Treffer
+plus Gesamtzahl – löst das manuelle Nachsehen in der DB ab, um Kandidaten für neue Regeln zu
+finden (genau das Vorgehen, das für die Empfänger-Regeln in 0.17.0 noch händisch nötig war).
+Zusätzlich ein Dashboard-Link „Kategorien/Regeln bearbeiten →" im Cashflow-Dashboard
+(`grafana/dashboards/cashflow.json`), der `/admin/rules/` in einem neuen Tab öffnet – von dort,
+wo eine große Fallback-Menge beim Durchsehen der Finanzen typischerweise zuerst auffällt.
 
 ### Zugriffsschutz
 

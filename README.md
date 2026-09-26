@@ -160,7 +160,10 @@ Kleine, vom Dienst selbst ausgelieferte Web-Oberfläche unter `/admin/rules/` (z
 inkl. Testen gegen echte Umsätze vor dem Übernehmen (Einzel-Regel-Vorschau und volle Simulation
 mit Diff). Regeln können gegen Buchungstext, Umsatztyp oder – seit 0.17.0 – gegen den
 strukturierten Empfänger-/Auftraggeber-Namen (`CounterpartyName`) geprüft werden, wichtig für
-echte Überweisungen, deren Buchungstext nur den Verwendungszweck enthält. Setzt `Admin__Password`
+echte Überweisungen, deren Buchungstext nur den Verwendungszweck enthält. Ein Button „Nicht
+kategorisiert" (seit 0.18.0) listet alle Umsätze ohne echte Kategorisierung (keine Kategorie
+oder nur der Vorzeichen-Fallback) – gute Kandidaten für neue Regeln, ohne manuell in der DB
+nachsehen zu müssen. Setzt `Admin__Password`
 in `.env` voraus (HTTP Basic Auth, Benutzername beliebig) –
 ohne gesetztes Passwort liefert `/admin/rules/*` durchgängig HTTP 503 statt ungeschützt erreichbar
 zu sein. Bewusst strenger geschützt als die übrigen `/debug/*`/`/auth/*`-Endpunkte, da hier
@@ -211,7 +214,9 @@ alle mit echten Daten verifiziert:
   Gewinn/Verlust-Entwicklung je Einzelposition über die Zeit.
 - **`grafana/dashboards/cashflow.json`** – „Cashflow & Kosten" (Phase 3): Einnahmen/
   Ausgaben/Netto je Monat, Ausgaben nach Kategorie, Gebührenübersicht (Kontoführungs-/
-  Ordergebühren). Interne Umbuchungen zwischen eigenen Konten sind ausgeschlossen.
+  Ordergebühren). Interne Umbuchungen zwischen eigenen Konten sind ausgeschlossen. Enthält
+  seit 0.18.0 einen Dashboard-Link „Kategorien/Regeln bearbeiten →", der `/admin/rules/`
+  direkt öffnet.
 - **`grafana/dashboards/depot-performance.json`** – „Depot-Performance" (Phase 4,
   vereinfacht): Depotwert vs. Kapitaleinsatz, unrealisierter Gewinn/Verlust absolut und in
   Prozent. Enthält bewusst **keine** realisierten Gewinne aus verkauften Positionen und
