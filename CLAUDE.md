@@ -256,7 +256,11 @@ Do this as part of the change itself, not only when the user asks for it.
   column on conflict, never touching `category_id`/`manually_categorized`). v0.18.0 added
   `GET /admin/rules/api/uncategorized` (transactions with no category or only the sign-based
   fallback, for finding rule candidates) plus a Grafana dashboard link on `cashflow.json`
-  pointing at `/admin/rules/`.
+  pointing at `/admin/rules/`. v0.19.0 added an optional free-text `comment` column on
+  `categorization_rules` (`db/migrations/0012_..._add_comment.sql`, `VARCHAR(500) NULL`) — purely
+  informational, never read by `CategorizationLogic.Categorize`; round-trips through
+  `POST`/`PUT /admin/rules/api/rules` and is inline-editable per row in the admin UI (saved via
+  the existing `PUT` endpoint on blur, no separate edit mode needed).
 - Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
   — check there first before guessing at API behavior, but confirm against a real request
   when in doubt: the docs have been wrong before (see above).

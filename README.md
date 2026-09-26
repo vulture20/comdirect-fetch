@@ -163,7 +163,9 @@ strukturierten Empfänger-/Auftraggeber-Namen (`CounterpartyName`) geprüft werd
 echte Überweisungen, deren Buchungstext nur den Verwendungszweck enthält. Ein Button „Nicht
 kategorisiert" (seit 0.18.0) listet alle Umsätze ohne echte Kategorisierung (keine Kategorie
 oder nur der Vorzeichen-Fallback) – gute Kandidaten für neue Regeln, ohne manuell in der DB
-nachsehen zu müssen. Setzt `Admin__Password`
+nachsehen zu müssen. Jede Regel kann außerdem einen optionalen Freitext-Kommentar tragen (seit
+0.19.0) – etwa warum sie existiert oder welcher Buchungstext sie ausgelöst hat –, direkt in der
+Regeltabelle editierbar. Setzt `Admin__Password`
 in `.env` voraus (HTTP Basic Auth, Benutzername beliebig) –
 ohne gesetztes Passwort liefert `/admin/rules/*` durchgängig HTTP 503 statt ungeschützt erreichbar
 zu sein. Bewusst strenger geschützt als die übrigen `/debug/*`/`/auth/*`-Endpunkte, da hier

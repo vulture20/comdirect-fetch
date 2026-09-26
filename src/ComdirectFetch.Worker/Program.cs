@@ -254,6 +254,7 @@ app.MapGet("/admin/rules/api/rules", async (CategorizationRuleRepository rules, 
         r.CategoryId,
         CategoryName = categoryNames.GetValueOrDefault(r.CategoryId),
         r.Priority,
+        r.Comment,
     }));
 });
 
@@ -265,7 +266,7 @@ app.MapPost("/admin/rules/api/rules", async (CategorizationRuleRepository rules,
     }
 
     var priorityCollision = await rules.PriorityInUseAsync(body.Priority, excludeId: null, ct);
-    var id = await rules.CreateAsync(new CategorizationRule { Pattern = body.Pattern, MatchField = matchField, CategoryId = body.CategoryId.Value, Priority = body.Priority }, ct);
+    var id = await rules.CreateAsync(new CategorizationRule { Pattern = body.Pattern, MatchField = matchField, CategoryId = body.CategoryId.Value, Priority = body.Priority, Comment = body.Comment }, ct);
     return Results.Ok(new { Id = id, PriorityCollision = priorityCollision });
 });
 
@@ -283,7 +284,7 @@ app.MapPut("/admin/rules/api/rules/{id:long}", async (long id, CategorizationRul
     }
 
     var priorityCollision = await rules.PriorityInUseAsync(body.Priority, excludeId: id, ct);
-    await rules.UpdateAsync(new CategorizationRule { Id = id, Pattern = body.Pattern, MatchField = matchField, CategoryId = body.CategoryId.Value, Priority = body.Priority }, ct);
+    await rules.UpdateAsync(new CategorizationRule { Id = id, Pattern = body.Pattern, MatchField = matchField, CategoryId = body.CategoryId.Value, Priority = body.Priority, Comment = body.Comment }, ct);
     return Results.Ok(new { PriorityCollision = priorityCollision });
 });
 
@@ -450,5 +451,5 @@ app.Run();
 internal sealed record TanConfirmRequest(string? TanCode);
 internal sealed record SetCredentialsRequest(string? Username, string? Password);
 internal sealed record CategoryRequest(string? Name, string? Type);
-internal sealed record RuleRequest(string? Pattern, string? MatchField, long? CategoryId, int Priority);
+internal sealed record RuleRequest(string? Pattern, string? MatchField, long? CategoryId, int Priority, string? Comment);
 internal sealed record RulePreviewRequest(string? Pattern, string? MatchField);
