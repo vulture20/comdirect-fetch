@@ -158,7 +158,10 @@ prüfen, bevor man sich darauf verlässt.
 Kleine, vom Dienst selbst ausgelieferte Web-Oberfläche unter `/admin/rules/` (z. B.
 `http://localhost:8750/admin/rules/`) – Tabellen-Editor für `categories`/`categorization_rules`,
 inkl. Testen gegen echte Umsätze vor dem Übernehmen (Einzel-Regel-Vorschau und volle Simulation
-mit Diff). Setzt `Admin__Password` in `.env` voraus (HTTP Basic Auth, Benutzername beliebig) –
+mit Diff). Regeln können gegen Buchungstext, Umsatztyp oder – seit 0.17.0 – gegen den
+strukturierten Empfänger-/Auftraggeber-Namen (`CounterpartyName`) geprüft werden, wichtig für
+echte Überweisungen, deren Buchungstext nur den Verwendungszweck enthält. Setzt `Admin__Password`
+in `.env` voraus (HTTP Basic Auth, Benutzername beliebig) –
 ohne gesetztes Passwort liefert `/admin/rules/*` durchgängig HTTP 503 statt ungeschützt erreichbar
 zu sein. Bewusst strenger geschützt als die übrigen `/debug/*`/`/auth/*`-Endpunkte, da hier
 dauerhafte Konfiguration geändert wird statt nur eine Aktion angestoßen. Die drei besonderen

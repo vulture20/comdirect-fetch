@@ -29,9 +29,12 @@ public static class CategorizationLogic
 
         foreach (var rule in rulesByPriority)
         {
-            var haystack = rule.MatchField == RuleMatchField.TransactionType
-                ? transaction.TransactionType
-                : transaction.BookingText;
+            var haystack = rule.MatchField switch
+            {
+                RuleMatchField.TransactionType => transaction.TransactionType,
+                RuleMatchField.CounterpartyName => transaction.CounterpartyName,
+                _ => transaction.BookingText,
+            };
 
             if (haystack is not null && haystack.Contains(rule.Pattern, StringComparison.OrdinalIgnoreCase))
             {

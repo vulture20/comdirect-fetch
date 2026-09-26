@@ -20,6 +20,12 @@ public sealed class Transaction
     /// comdirect geliefert. Primäres Signal zur Erkennung interner Umbuchungen (KONZEPT.md Abschnitt 6).</summary>
     public string? CounterpartyIban { get; set; }
 
+    /// <summary>Name der Gegenseite (Remitter bei Gutschrift, Debtor/Creditor bei Belastung), falls von
+    /// comdirect geliefert (holderName) - Signal für Kategorisierungsregeln mit
+    /// RuleMatchField.CounterpartyName, für Buchungen, deren Empfänger-Name nur strukturiert
+    /// vorliegt, nicht im Buchungstext (KONZEPT.md Abschnitt 6).</summary>
+    public string? CounterpartyName { get; set; }
+
     public long? CategoryId { get; set; }
     public bool ManuallyCategorized { get; set; }
     public required DateTimeOffset FirstSeenAt { get; set; }

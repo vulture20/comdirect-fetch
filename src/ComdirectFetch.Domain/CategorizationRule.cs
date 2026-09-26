@@ -4,7 +4,10 @@ namespace ComdirectFetch.Domain;
 public enum RuleMatchField
 {
     BookingText,
-    TransactionType
+    TransactionType,
+
+    /// <summary>Name der Gegenseite (Transaction.CounterpartyName) - für Buchungen, deren Empfänger-Name nur strukturiert vorliegt, nicht im Buchungstext.</summary>
+    CounterpartyName
 }
 
 /// <summary>

@@ -123,6 +123,7 @@
           <select id="newRuleField">
             <option value="BookingText">BookingText</option>
             <option value="TransactionType">TransactionType</option>
+            <option value="CounterpartyName">CounterpartyName (Empfänger/Auftraggeber)</option>
           </select>
         </td>
         <td><select id="newRuleCategory"></select></td>
@@ -145,6 +146,7 @@
       <select id="previewField">
         <option value="BookingText">BookingText</option>
         <option value="TransactionType">TransactionType</option>
+        <option value="CounterpartyName">CounterpartyName (Empfänger/Auftraggeber)</option>
       </select>
     </div>
     <div style="flex:0">
@@ -316,13 +318,14 @@ async function previewRule() {
     const rows = result.matches.map(m => `
       <tr>
         <td>${escapeHtml(m.bookingText || m.transactionType || '')}</td>
+        <td>${escapeHtml(m.counterpartyName || '')}</td>
         <td>${m.amount}</td>
         <td>${escapeHtml(m.currentCategory || '(keine)')}</td>
       </tr>
     `).join('');
     resultEl.innerHTML = `
       <p class="muted">${result.totalMatches} Treffer${result.totalMatches > result.matches.length ? ' (zeige die ersten ' + result.matches.length + ')' : ''}:</p>
-      <table><thead><tr><th>Buchungstext/Umsatztyp</th><th>Betrag</th><th>Aktuelle Kategorie</th></tr></thead><tbody>${rows}</tbody></table>
+      <table><thead><tr><th>Buchungstext/Umsatztyp</th><th>Empfänger/Auftraggeber</th><th>Betrag</th><th>Aktuelle Kategorie</th></tr></thead><tbody>${rows}</tbody></table>
     `;
   } catch (e) {
     resultEl.innerHTML = `<p class="msg error" style="display:block">Fehler: ${escapeHtml(e.message)}</p>`;

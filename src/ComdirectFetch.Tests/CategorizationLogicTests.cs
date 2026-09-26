@@ -5,7 +5,8 @@ namespace ComdirectFetch.Tests;
 public class CategorizationLogicTests
 {
     private static Transaction MakeTransaction(
-        decimal amount, string? bookingText = null, string? transactionType = null, string? counterpartyIban = null) => new()
+        decimal amount, string? bookingText = null, string? transactionType = null, string? counterpartyIban = null,
+        string? counterpartyName = null) => new()
     {
         AccountId = 1,
         ComdirectReference = "ref-1",
@@ -15,6 +16,7 @@ public class CategorizationLogicTests
         BookingText = bookingText,
         TransactionType = transactionType,
         CounterpartyIban = counterpartyIban,
+        CounterpartyName = counterpartyName,
         FirstSeenAt = DateTimeOffset.UtcNow,
     };
 
@@ -176,6 +178,41 @@ public class CategorizationLogicTests
             fallbackIncomeCategoryId: 1, fallbackExpenseCategoryId: 2);
 
         Assert.NotEqual(211, result);
+    }
+
+    [Fact]
+    public void Regel_auf_CounterpartyName_erkennt_Ueberweisung_ohne_Haendlernamen_im_Buchungstext()
+    {
+        // Motivation: echte Überweisungen haben oft nur den Verwendungszweck im Buchungstext,
+        // nicht den Empfänger-Namen - der liegt nur strukturiert vor (transaction.CounterpartyName,
+        // aus comdirects remitter/deptor/creditor.holderName).
+        var transaction = MakeTransaction(-25m, bookingText: "Rechnung 12345", counterpartyName: "Musterfirma GmbH");
+        var rules = new List<CategorizationRule>
+        {
+            new() { Pattern = "Musterfirma", MatchField = RuleMatchField.CounterpartyName, CategoryId = 99, Priority = 50 },
+        };
+
+        var result = CategorizationLogic.Categorize(
+            transaction, ownIbans: [], internalCategoryId: null, rulesByPriority: rules,
+            fallbackIncomeCategoryId: 1, fallbackExpenseCategoryId: 2);
+
+        Assert.Equal(99, result);
+    }
+
+    [Fact]
+    public void Regel_auf_CounterpartyName_matched_nicht_wenn_Feld_leer_ist()
+    {
+        var transaction = MakeTransaction(-25m, bookingText: "Kartenzahlung ohne strukturierten Empfänger");
+        var rules = new List<CategorizationRule>
+        {
+            new() { Pattern = "Musterfirma", MatchField = RuleMatchField.CounterpartyName, CategoryId = 99, Priority = 50 },
+        };
+
+        var result = CategorizationLogic.Categorize(
+            transaction, ownIbans: [], internalCategoryId: null, rulesByPriority: rules,
+            fallbackIncomeCategoryId: 1, fallbackExpenseCategoryId: 2);
+
+        Assert.Equal(2, result);
     }
 
     [Fact]

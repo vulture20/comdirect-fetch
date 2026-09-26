@@ -71,11 +71,14 @@ public sealed class TransactionFetchService(
                         continue;
                     }
 
-                    // Gegenkonto-IBAN: bei Gutschrift (Betrag >= 0) ist der Remitter die Gegenseite,
+                    // Gegenkonto-IBAN/-Name: bei Gutschrift (Betrag >= 0) ist der Remitter die Gegenseite,
                     // bei Belastung Debtor/Creditor (comdirect befüllt je nach Buchungsart nur eines davon).
                     var counterpartyIban = entry.Amount.Value >= 0
                         ? entry.Remitter?.Iban
                         : entry.Debtor?.Iban ?? entry.Creditor?.Iban;
+                    var counterpartyName = entry.Amount.Value >= 0
+                        ? entry.Remitter?.HolderName
+                        : entry.Debtor?.HolderName ?? entry.Creditor?.HolderName;
 
                     var inserted = await transactionRepository.InsertIfNewAsync(new Transaction
                     {
@@ -88,6 +91,7 @@ public sealed class TransactionFetchService(
                         BookingText = entry.RemittanceInfo,
                         TransactionType = entry.TransactionType?.Text ?? entry.TransactionType?.Key,
                         CounterpartyIban = counterpartyIban,
+                        CounterpartyName = counterpartyName,
                         FirstSeenAt = now,
                     }, stoppingToken);
 

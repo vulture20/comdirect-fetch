@@ -305,14 +305,19 @@ app.MapPost("/admin/rules/api/rules/preview", async (
 {
     if (string.IsNullOrWhiteSpace(body.Pattern) || !Enum.TryParse<RuleMatchField>(body.MatchField, out var matchField))
     {
-        return Results.BadRequest(new { Message = "pattern und matchField (BookingText/TransactionType) sind erforderlich." });
+        return Results.BadRequest(new { Message = "pattern und matchField (BookingText/TransactionType/CounterpartyName) sind erforderlich." });
     }
 
     var categoryNames = (await categories.GetAllAsync(ct)).ToDictionary(c => c.Id, c => c.Name);
     var matched = (await transactions.GetAllAsync(ct))
         .Where(t =>
         {
-            var haystack = matchField == RuleMatchField.TransactionType ? t.TransactionType : t.BookingText;
+            var haystack = matchField switch
+            {
+                RuleMatchField.TransactionType => t.TransactionType,
+                RuleMatchField.CounterpartyName => t.CounterpartyName,
+                _ => t.BookingText,
+            };
             return haystack is not null && haystack.Contains(body.Pattern, StringComparison.OrdinalIgnoreCase);
         })
         .ToList();
@@ -325,6 +330,7 @@ app.MapPost("/admin/rules/api/rules/preview", async (
             t.Id,
             t.BookingText,
             t.TransactionType,
+            t.CounterpartyName,
             t.Amount,
             CurrentCategory = t.CategoryId is { } catId ? categoryNames.GetValueOrDefault(catId) : null,
         }),

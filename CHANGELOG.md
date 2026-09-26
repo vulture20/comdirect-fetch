@@ -4,6 +4,52 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.17.0 – Kategorisierungsregeln auch gegen den Empfänger/Auftraggeber
+
+Manche Buchungen ließen sich nicht korrekt kategorisieren, weil der Empfänger-Name nur
+strukturiert vorlag, nicht im Buchungstext – typisch bei echten Überweisungen (der Buchungstext
+enthält dort meist nur den Verwendungszweck), anders als bei Kartenzahlungen, wo der Händlername
+meist im Buchungstext selbst steht. comdirect liefert den Namen der Gegenseite schon seit jeher
+über `remitter`/`deptor`/`creditor.holderName` mit – bisher wurde daraus nur die IBAN
+übernommen (`counterparty_iban`, 0.3.0), der Name blieb im bereits geparsten DTO ungenutzt.
+
+- Neue Spalte `transactions.counterparty_name`
+  (`db/migrations/0010_transactions_counterparty_name.sql`), befüllt in
+  `TransactionFetchService` mit derselben Remitter/Debtor/Creditor-Auswahllogik wie schon bei
+  der IBAN (Remitter bei Gutschrift, sonst Debtor/Creditor).
+- Neuer `RuleMatchField.CounterpartyName`
+  (`db/migrations/0011_categorization_rules_add_counterparty_name.sql` erweitert das
+  `match_field`-ENUM) – bestehende Regeln bleiben unverändert, kein automatisches "auch gegen
+  den Empfänger matchen" für bereits existierende BookingText-Regeln, um keine bestehenden
+  Kategorisierungen unerwartet zu verschieben. Neue Option in der Web-Oberfläche
+  (`/admin/rules/`, Issue #13) für Regel-Anlage und Einzel-Regel-Vorschau.
+- `TransactionRepository.InsertIfNewAsync` von `INSERT IGNORE` auf ein gezieltes Upsert
+  umgestellt (`ON DUPLICATE KEY UPDATE counterparty_name = ...`) – da comdirect bei jedem Abruf
+  wieder die komplette verfügbare Historie liefert (kein "seit letztem Mal"-Cursor), backfillt
+  das `counterparty_name` für alle bereits gespeicherten Alt-Umsätze automatisch beim nächsten
+  regulären Abruf. `category_id`/`manually_categorized` werden dabei nie angetastet – bestehende
+  Kategorisierung bleibt unberührt.
+- 2 neue Unit-Tests für `CategorizationLogic` mit dem neuen Feld.
+
+Live verifiziert: nach dem Deploy `fetch-now` ausgelöst, `counterparty_name` für 38 der 429
+bestehenden Umsätze automatisch nachgetragen (Rest: Kartenzahlungen, für die comdirect keinen
+strukturierten Empfänger liefert – bei denen steht der Händlername ohnehin meist schon im
+Buchungstext). Anhand der jetzt sichtbaren Empfänger-Namen zwei neue, über die neue
+Web-Oberfläche (Issue #13) angelegte Regeln, nach Bestätigung durch den Nutzer und Prüfung per
+Simulation vor dem Commit:
+
+- `Max Mustermann` (CounterpartyName) → „Intern/Neutral" – konsolidiert 11 Selbstüberweisungen
+  (Tagesgeld-/Sparplan-Übertrag), von denen bisher nur 2 über die IBAN-basierte Erkennung als
+  intern erkannt wurden, 9 aber in „Sonstige Einnahme“/„Sonstige Ausgabe“ landeten, weil dafür
+  keine Gegenkonto-IBAN vorlag.
+- `Mustervermieter` (CounterpartyName) → „Miete/Wohnen" – konsolidiert 2 weitere Buchungen mit dem
+  bereits über die Dauerauftrag-Regel erkannten Vermieter (Nebenkostennachzahlung,
+  Stromkostenerstattung nach Wasserschaden), deren Buchungstext den Vermieter-Namen nicht
+  enthielt.
+
+`POST /debug/recategorize` danach ausgeführt: 11 Umsätze tatsächlich neu kategorisiert, DB-Stand
+bestätigt (11 Zeilen unter „Intern/Neutral“, 8 unter „Miete/Wohnen“ für diese beiden Empfänger).
+
 ## 0.16.0 – Bedienoberfläche für Kategorien/Regeln (Issue #13)
 
 `categories`/`categorization_rules` waren im Code bisher rein lesbar – jede Änderung brauchte
