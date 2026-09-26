@@ -4,24 +4,6 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
-## 0.20.0 – Manuelles Ändern einer bestehenden Kategorisierung
-
-Bisher konnte die Kategorie eines Umsatzes nur indirekt über Regeln + Neu-Kategorisierung
-gesetzt werden – keine Möglichkeit, einen bereits (falsch) kategorisierten Umsatz gezielt von
-Hand zu korrigieren. Neue Endpunkte auf der Admin-Oberfläche (`/admin/rules/`):
-
-- `GET /admin/rules/api/transactions/search?q=...` – Freitextsuche (case-insensitive
-  Teilstring gegen Buchungstext/Empfänger) über **alle** Umsätze, nicht nur unkategorisierte.
-- `PUT /admin/rules/api/transactions/{id}/category` – setzt `category_id` und markiert den
-  Umsatz als `manually_categorized = true`, damit künftige Regel-Anwendungen
-  (`CategorizeNewTransactionsAsync`/`RecategorizeAllAsync`) diese Zuordnung nicht mehr
-  überschreiben (Nutzung des bereits bestehenden `TransactionRepository.UpdateCategoryAsync`,
-  bisher nur intern von `CategorizationService` verwendet).
-
-Neues Panel „Kategorie eines Umsatzes ändern" in der Admin-Oberfläche für die Suche, plus eine
-Kategorie-Auswahl mit „Speichern"-Button direkt in der bestehenden „Nicht kategorisiert"-Liste
-(seit 0.18.0) – deren Endpunkt liefert jetzt zusätzlich `categoryId` und `manuallyCategorized`.
-
 ## 0.19.0 – Kommentarfeld für Kategorisierungsregeln
 
 Neue optionale Freitext-Spalte `comment` auf `categorization_rules`
