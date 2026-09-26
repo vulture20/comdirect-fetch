@@ -92,21 +92,6 @@
 </div>
 
 <div class="panel">
-  <h2>Kategorie eines Umsatzes ändern</h2>
-  <p class="hint" style="margin-top:-6px">Sucht (case-insensitive Teilstring gegen Buchungstext/Empfänger) über alle Umsätze, nicht nur unkategorisierte - zum Korrigieren einer bereits bestehenden, aber falschen Kategorisierung. Eine hier gespeicherte Kategorie gilt als manuell zugeordnet und wird von künftigen Regel-Anwendungen nicht mehr überschrieben.</p>
-  <div class="toolbar">
-    <div>
-      <label>Suche</label>
-      <input type="text" id="txSearchQuery" placeholder="z. B. STEAMGAMES.COM" onkeydown="if(event.key==='Enter') searchTransactions()">
-    </div>
-    <div style="flex:0">
-      <button class="primary" onclick="searchTransactions()">Suchen</button>
-    </div>
-  </div>
-  <div id="txSearchResult"></div>
-</div>
-
-<div class="panel">
   <h2>Kategorien</h2>
   <table>
     <thead>
@@ -413,38 +398,6 @@ async function applyRecategorize() {
   }
 }
 
-function categoryOptionsHtml(selectedId) {
-  return categories.map(c => `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
-}
-
-function transactionRowHtml(t) {
-  return `
-    <tr data-tx-id="${t.id}">
-      <td>${escapeHtml(t.bookingDate)}</td>
-      <td>${escapeHtml(t.bookingText || t.transactionType || '')}</td>
-      <td>${escapeHtml(t.counterpartyName || '')}</td>
-      <td>${t.amount}</td>
-      <td><select id="txCat-${t.id}">${categoryOptionsHtml(t.categoryId)}</select></td>
-      <td>${t.manuallyCategorized ? '<span class="muted">manuell</span>' : ''}</td>
-      <td><button class="primary" onclick="saveTransactionCategory(${t.id})">Speichern</button></td>
-    </tr>
-  `;
-}
-
-async function saveTransactionCategory(id) {
-  const select = document.getElementById('txCat-' + id);
-  const categoryId = Number(select.value);
-  const globalMsg = document.getElementById('globalMsg');
-  try {
-    await api('PUT', '/transactions/' + id + '/category', { categoryId });
-    showMsg(globalMsg, 'Kategorie gespeichert.', 'ok');
-    const row = document.querySelector(`tr[data-tx-id="${id}"]`);
-    if (row) row.children[5].innerHTML = '<span class="muted">manuell</span>';
-  } catch (e) {
-    showMsg(globalMsg, 'Fehler: ' + e.message, 'error');
-  }
-}
-
 async function loadUncategorized() {
   const resultEl = document.getElementById('uncategorizedResult');
   resultEl.innerHTML = '<p class="muted">Lädt...</p>';
@@ -454,31 +407,18 @@ async function loadUncategorized() {
       resultEl.innerHTML = '<p class="muted">Keine unkategorisierten Umsätze.</p>';
       return;
     }
-    const rows = result.transactions.map(transactionRowHtml).join('');
+    const rows = result.transactions.map(t => `
+      <tr>
+        <td>${escapeHtml(t.bookingDate)}</td>
+        <td>${escapeHtml(t.bookingText || t.transactionType || '')}</td>
+        <td>${escapeHtml(t.counterpartyName || '')}</td>
+        <td>${t.amount}</td>
+        <td>${escapeHtml(t.currentCategory || '(keine)')}</td>
+      </tr>
+    `).join('');
     resultEl.innerHTML = `
       <p class="muted">${result.totalCount} Treffer${result.totalCount > result.transactions.length ? ' (zeige die ersten ' + result.transactions.length + ')' : ''}:</p>
-      <table><thead><tr><th>Datum</th><th>Buchungstext/Umsatztyp</th><th>Empfänger/Auftraggeber</th><th>Betrag</th><th style="width:200px">Kategorie</th><th style="width:80px"></th><th style="width:100px"></th></tr></thead><tbody>${rows}</tbody></table>
-    `;
-  } catch (e) {
-    resultEl.innerHTML = `<p class="msg error" style="display:block">Fehler: ${escapeHtml(e.message)}</p>`;
-  }
-}
-
-async function searchTransactions() {
-  const q = document.getElementById('txSearchQuery').value.trim();
-  const resultEl = document.getElementById('txSearchResult');
-  if (!q) { resultEl.innerHTML = '<p class="muted">Suchbegriff eingeben.</p>'; return; }
-  resultEl.innerHTML = '<p class="muted">Lädt...</p>';
-  try {
-    const result = await api('GET', '/transactions/search?q=' + encodeURIComponent(q));
-    if (result.totalMatches === 0) {
-      resultEl.innerHTML = '<p class="muted">Keine Treffer.</p>';
-      return;
-    }
-    const rows = result.matches.map(transactionRowHtml).join('');
-    resultEl.innerHTML = `
-      <p class="muted">${result.totalMatches} Treffer${result.totalMatches > result.matches.length ? ' (zeige die ersten ' + result.matches.length + ')' : ''}:</p>
-      <table><thead><tr><th>Datum</th><th>Buchungstext/Umsatztyp</th><th>Empfänger/Auftraggeber</th><th>Betrag</th><th style="width:200px">Kategorie</th><th style="width:80px"></th><th style="width:100px"></th></tr></thead><tbody>${rows}</tbody></table>
+      <table><thead><tr><th>Datum</th><th>Buchungstext/Umsatztyp</th><th>Empfänger/Auftraggeber</th><th>Betrag</th><th>Aktuelle Kategorie</th></tr></thead><tbody>${rows}</tbody></table>
     `;
   } catch (e) {
     resultEl.innerHTML = `<p class="msg error" style="display:block">Fehler: ${escapeHtml(e.message)}</p>`;

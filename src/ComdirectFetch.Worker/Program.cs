@@ -399,74 +399,9 @@ app.MapGet("/admin/rules/api/uncategorized", async (
             t.TransactionType,
             t.CounterpartyName,
             t.Amount,
-            t.CategoryId,
             CurrentCategory = t.CategoryId is { } catId ? categoryNames.GetValueOrDefault(catId) : null,
-            t.ManuallyCategorized,
         }),
     });
-});
-
-// Freitextsuche über alle Umsätze (nicht nur unkategorisierte) - Grundlage, um die Kategorie
-// eines bereits kategorisierten, aber falsch zugeordneten Umsatzes von Hand zu finden und zu
-// korrigieren. Gleiches In-Memory-Filtern wie /rules/preview (Umsatzvolumen dieses Projekts
-// macht das unproblematisch, siehe dort).
-app.MapGet("/admin/rules/api/transactions/search", async (
-    string? q,
-    TransactionRepository transactions,
-    CategoryRepository categories,
-    CancellationToken ct) =>
-{
-    if (string.IsNullOrWhiteSpace(q))
-    {
-        return Results.BadRequest(new { Message = "q (Suchbegriff gegen Buchungstext/Empfänger) ist erforderlich." });
-    }
-
-    var categoryNames = (await categories.GetAllAsync(ct)).ToDictionary(c => c.Id, c => c.Name);
-    var matched = (await transactions.GetAllAsync(ct))
-        .Where(t =>
-            (t.BookingText is not null && t.BookingText.Contains(q, StringComparison.OrdinalIgnoreCase)) ||
-            (t.CounterpartyName is not null && t.CounterpartyName.Contains(q, StringComparison.OrdinalIgnoreCase)))
-        .OrderByDescending(t => t.BookingDate)
-        .ToList();
-
-    return Results.Ok(new
-    {
-        TotalMatches = matched.Count,
-        Matches = matched.Take(50).Select(t => new
-        {
-            t.Id,
-            t.BookingDate,
-            t.BookingText,
-            t.TransactionType,
-            t.CounterpartyName,
-            t.Amount,
-            t.CategoryId,
-            CurrentCategory = t.CategoryId is { } catId ? categoryNames.GetValueOrDefault(catId) : null,
-            t.ManuallyCategorized,
-        }),
-    });
-});
-
-// Manuelle Korrektur der Kategorie eines einzelnen, bereits gespeicherten Umsatzes (fehlt bisher -
-// Kategorien konnten nur indirekt über Regeln + Neu-Kategorisierung gesetzt werden). Setzt
-// manually_categorized = true, damit RecategorizeAllAsync/CategorizeNewTransactionsAsync diese
-// Zuordnung danach nie wieder überschreiben (siehe CategorizationService/TransactionRepository).
-app.MapPut("/admin/rules/api/transactions/{id:long}/category", async (
-    long id,
-    TransactionRepository transactions,
-    SetTransactionCategoryRequest body,
-    CancellationToken ct) =>
-{
-    try
-    {
-        await transactions.UpdateCategoryAsync(id, body.CategoryId, manuallyCategorized: true, ct);
-    }
-    catch (MySqlConnector.MySqlException ex) when (ex.Number == 1452) // FK-Verletzung: unbekannte categoryId
-    {
-        return Results.BadRequest(new { Message = "Unbekannte categoryId." });
-    }
-
-    return Results.Ok();
 });
 
 // KONZEPT.md Abschnitt 10 B: Bootstrap-Schritt für Zugangsnummer/PIN - verschlüsselt sie mit
@@ -517,5 +452,4 @@ internal sealed record TanConfirmRequest(string? TanCode);
 internal sealed record SetCredentialsRequest(string? Username, string? Password);
 internal sealed record CategoryRequest(string? Name, string? Type);
 internal sealed record RuleRequest(string? Pattern, string? MatchField, long? CategoryId, int Priority, string? Comment);
-internal sealed record SetTransactionCategoryRequest(long? CategoryId);
 internal sealed record RulePreviewRequest(string? Pattern, string? MatchField);
