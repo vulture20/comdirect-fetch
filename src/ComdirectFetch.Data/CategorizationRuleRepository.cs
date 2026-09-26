@@ -15,7 +15,7 @@ public sealed class CategorizationRuleRepository(IDbConnectionFactory connection
         using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         const string sql = """
             SELECT id AS Id, pattern AS Pattern, match_field AS MatchField,
-                   category_id AS CategoryId, priority AS Priority
+                   category_id AS CategoryId, priority AS Priority, comment AS Comment
             FROM categorization_rules
             ORDER BY priority ASC;
             """;
@@ -29,7 +29,7 @@ public sealed class CategorizationRuleRepository(IDbConnectionFactory connection
         using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         const string sql = """
             SELECT id AS Id, pattern AS Pattern, match_field AS MatchField,
-                   category_id AS CategoryId, priority AS Priority
+                   category_id AS CategoryId, priority AS Priority, comment AS Comment
             FROM categorization_rules
             WHERE id = @Id;
             """;
@@ -42,8 +42,8 @@ public sealed class CategorizationRuleRepository(IDbConnectionFactory connection
     {
         using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         const string sql = """
-            INSERT INTO categorization_rules (pattern, match_field, category_id, priority)
-            VALUES (@Pattern, @MatchField, @CategoryId, @Priority);
+            INSERT INTO categorization_rules (pattern, match_field, category_id, priority, comment)
+            VALUES (@Pattern, @MatchField, @CategoryId, @Priority, @Comment);
             SELECT LAST_INSERT_ID();
             """;
 
@@ -54,6 +54,7 @@ public sealed class CategorizationRuleRepository(IDbConnectionFactory connection
             MatchField = rule.MatchField.ToString(),
             rule.CategoryId,
             rule.Priority,
+            rule.Comment,
         });
     }
 
@@ -62,7 +63,7 @@ public sealed class CategorizationRuleRepository(IDbConnectionFactory connection
         using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         const string sql = """
             UPDATE categorization_rules
-            SET pattern = @Pattern, match_field = @MatchField, category_id = @CategoryId, priority = @Priority
+            SET pattern = @Pattern, match_field = @MatchField, category_id = @CategoryId, priority = @Priority, comment = @Comment
             WHERE id = @Id;
             """;
 
@@ -73,6 +74,7 @@ public sealed class CategorizationRuleRepository(IDbConnectionFactory connection
             MatchField = rule.MatchField.ToString(),
             rule.CategoryId,
             rule.Priority,
+            rule.Comment,
         });
     }
 

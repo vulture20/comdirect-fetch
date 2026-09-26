@@ -465,7 +465,8 @@ bisherigen Projekt-Philosophie, keine Infrastruktur für hypothetische künftige
 aufzubauen). Tabellen-Editor für beide Entitäten:
 
 - **Kategorien**: Name, Typ (Einnahme/Ausgabe/InternNeutral).
-- **Regeln**: Muster, geprüftes Feld (BookingText/TransactionType/CounterpartyName, seit 0.17.0), Kategorie, Priorität.
+- **Regeln**: Muster, geprüftes Feld (BookingText/TransactionType/CounterpartyName, seit 0.17.0), Kategorie, Priorität,
+  optionaler Freitext-Kommentar (seit 0.19.0, siehe unten).
 
 Pfad bewusst `/admin/rules/` statt des ursprünglich erwogenen bloßen `/admin/` – letzteres
 kollidiert mit dem bereits bestehenden, bewusst unauthentifizierten `POST /admin/credentials`
@@ -509,6 +510,19 @@ finden (genau das Vorgehen, das für die Empfänger-Regeln in 0.17.0 noch händi
 Zusätzlich ein Dashboard-Link „Kategorien/Regeln bearbeiten →" im Cashflow-Dashboard
 (`grafana/dashboards/cashflow.json`), der `/admin/rules/` in einem neuen Tab öffnet – von dort,
 wo eine große Fallback-Menge beim Durchsehen der Finanzen typischerweise zuerst auffällt.
+
+### Freitext-Kommentar je Regel (seit 0.19.0)
+
+Neue optionale Spalte `comment` auf `categorization_rules` (`VARCHAR(500) NULL`,
+`db/migrations/0012_categorization_rules_add_comment.sql`), damit festgehalten werden kann,
+warum eine Regel existiert – z. B. welcher konkrete Buchungstext sie ausgelöst hat, oder ein
+Hinweis wie beim KAPITAL-PLUS/XTR-Padding-Fall, dass das Muster bewusst kurz gehalten wurde,
+um innerhalb eines von comdirect aufgefüllten Textsegments zu bleiben. Rein informativ, geht
+nicht in `CategorizationLogic.Categorize` ein und beeinflusst kein Matching. `POST`/
+`PUT /admin/rules/api/rules` nehmen `comment` entgegen, die Web-Oberfläche zeigt ihn als
+eigene, direkt inline editierbare Spalte in der Regeltabelle (Speichern beim Verlassen des
+Feldes über den bestehenden `PUT`-Endpunkt, keine neue Bearbeiten-UI nötig) sowie als
+optionales Feld beim Anlegen einer neuen Regel.
 
 ### Zugriffsschutz
 

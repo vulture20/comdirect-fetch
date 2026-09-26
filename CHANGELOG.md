@@ -4,6 +4,17 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.19.0 – Kommentarfeld für Kategorisierungsregeln
+
+Neue optionale Freitext-Spalte `comment` auf `categorization_rules`
+(`db/migrations/0012_categorization_rules_add_comment.sql`, `VARCHAR(500) NULL`), damit
+festgehalten werden kann, warum eine Regel existiert – rein informativ, fließt nicht in
+`CategorizationLogic.Categorize` ein. `POST`/`PUT /admin/rules/api/rules` nehmen und liefern
+`comment` jetzt mit zurück; die Admin-Oberfläche (`/admin/rules/`) zeigt eine neue „Kommentar“-
+Spalte in der Regeltabelle, editierbar direkt inline (Änderung wird beim Verlassen des Feldes
+per bestehendem `PUT`-Endpunkt gespeichert) sowie ein optionales Kommentarfeld beim Anlegen
+einer neuen Regel.
+
 ## 0.18.0 – "Nicht kategorisiert"-Übersicht in der Admin-Oberfläche + Grafana-Link
 
 Neuer Button „Nicht kategorisiert" auf der Admin-Oberfläche (`/admin/rules/`, Issue #13):

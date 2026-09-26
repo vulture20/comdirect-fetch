@@ -22,4 +22,7 @@ public sealed class CategorizationRule
     public required RuleMatchField MatchField { get; set; }
     public required long CategoryId { get; set; }
     public required int Priority { get; set; }
+
+    /// <summary>Freitext-Notiz, warum diese Regel existiert (rein informativ, fließt nicht in CategorizationLogic ein).</summary>
+    public string? Comment { get; set; }
 }
