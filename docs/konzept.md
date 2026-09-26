@@ -102,7 +102,7 @@ Stammdaten (Konten, Depots) werden separat von den bewegten Daten (Salden, Umsä
 | `portfolios` | Stammdaten je Depot (ein Zugang kann mehrere Depots haben) | ID, comdirect-Depot-ID, Bezeichnung |
 | `portfolio_snapshots` | Depotübersicht je Abruf und Depot (Zeitreihe) | ID, Depot-Referenz, Zeitstempel, Gesamtwert, Anschaffungswert, Währung |
 | `portfolio_positions` | Einzelpositionen je Snapshot | ID, Snapshot-Referenz, WKN/ISIN, Anlageklasse (seit 0.15.0, GitHub-Issue #4), Bezeichnung, Stückzahl, Kurswert, Anschaffungswert, Gewinn/Verlust, Währung |
-| `transactions` | Kontoumsätze je Konto, **je Buchung genau ein Datensatz** | ID, Konto-Referenz, comdirect-Umsatz-Referenz (eindeutig), Buchungstag, Valuta, Betrag, Währung, Buchungstext, Umsatztyp, Kategorie-Referenz, manuell kategorisiert (Ja/Nein), Zeitstempel Ersterfassung |
+| `transactions` | Kontoumsätze je Konto, **je Buchung genau ein Datensatz** | ID, Konto-Referenz, comdirect-Umsatz-Referenz (eindeutig), Buchungstag, Valuta, Betrag, Währung, Buchungstext, Umsatztyp, Gegenkonto-IBAN, Gegenkonto-Name (seit 0.17.0), Kategorie-Referenz, manuell kategorisiert (Ja/Nein), Zeitstempel Ersterfassung |
 | `categories` | Kategorien für die Cashflow-Analyse/Kostenübersicht (Abschnitt 6) | ID, Name, Art (Einnahme/Ausgabe/Intern-Neutral) |
 | `categorization_rules` | Priorisierte Muster-Regeln zur automatischen Kategorisierung (Abschnitt 6) | ID, Muster/Schlüsselwort, geprüftes Feld, Kategorie-Referenz, Priorität |
 | `sync_log` | Protokoll jedes Abruflaufs | ID, Datenart, Konto-/Depot-Referenz (optional, da z. B. der Token-Refresh keinem einzelnen Konto zugeordnet ist), Anwendungsversion, Start, Ende, Status, Fehlermeldung |
@@ -133,7 +133,7 @@ Kontoumsätze kommen von comdirect als Freitext (Buchungstext/Verwendungszweck, 
 
 1. **Interne Umbuchungen zuerst erkennen**: Buchungen zwischen den eigenen, in `accounts`/`portfolios` bekannten Konten/Depots (z. B. Tagesgeld ↔ Verrechnungskonto, Verrechnungskonto ↔ Depot) werden anhand der Gegenkonto-Referenz erkannt und als eigene Kategorie „Intern/Neutral“ markiert. Sie dürfen nicht als Einnahme *und* Ausgabe in die Cashflow-Analyse einfließen.
 2. **Strukturiertes Feld nutzen**: Der von comdirect gelieferte grobe Umsatztyp (z. B. Wertpapierabrechnung, Dauerauftrag) liefert bereits ein erstes, zuverlässiges Signal und wird als erste Kategorisierungsebene verwendet, bevor Freitext überhaupt betrachtet wird.
-3. **Regelbasiertes Muster-Matching auf Freitext**: Eine gepflegte, priorisierte Liste von Mustern (Schlüsselwörter/Textbausteine, z. B. im Buchungstext oder Empfängernamen) wird der Reihe nach geprüft, erste Übereinstimmung gewinnt. Beispiele für Startkategorien: Gehalt/Lohn, Miete/Wohnen, Versicherungen, Abonnements, Lebensmittel/Einzelhandel, Versandhandel, Ordergebühren, Kontoführungsgebühren. Die Regeln sind Daten, keine Programmlogik – sie sollen ohne Neu-Deployment des Diensts pflegbar sein.
+3. **Regelbasiertes Muster-Matching auf Freitext**: Eine gepflegte, priorisierte Liste von Mustern (Schlüsselwörter/Textbausteine im Buchungstext, im Umsatztyp oder – seit 0.17.0 – im Empfängernamen, `RuleMatchField.CounterpartyName`/`transactions.counterparty_name`; comdirect liefert den Namen der Gegenseite über `remitter`/`deptor`/`creditor.holderName`, wichtig für Buchungen wie echte Überweisungen, deren Buchungstext nur den Verwendungszweck enthält, nicht den Empfänger) wird der Reihe nach geprüft, erste Übereinstimmung gewinnt. Beispiele für Startkategorien: Gehalt/Lohn, Miete/Wohnen, Versicherungen, Abonnements, Lebensmittel/Einzelhandel, Versandhandel, Ordergebühren, Kontoführungsgebühren. Die Regeln sind Daten, keine Programmlogik – sie sollen ohne Neu-Deployment des Diensts pflegbar sein (seit 0.16.0 über die Web-Oberfläche unter `/admin/rules/`, siehe Abschnitt 12).
 4. **Fallback nach Vorzeichen**: Findet keine Regel eine Übereinstimmung, wird grob nach Betragsvorzeichen in „Sonstige Einnahme“ bzw. „Sonstige Ausgabe“ eingeordnet, statt die Buchung unkategorisiert zu lassen.
 5. **Manuelle Korrektur mit Vorrang**: Der Nutzer kann eine automatisch zugewiesene Kategorie nachträglich korrigieren; eine solche manuelle Zuordnung wird als solche markiert und bei künftigen automatischen (Neu-)Kategorisierungen nicht überschrieben.
 
@@ -255,6 +255,15 @@ Diese Pflege übernimmt Claude Code während der Entwicklung selbstständig als 
   abgesichert (anders als die übrigen, bewusst ungeschützten `/debug/*`-Endpunkte, da hier
   dauerhafte Konfiguration geändert wird, nicht nur eine Aktion angestoßen). Live verifiziert.
   Erledigt.
+- **Kategorisierungsregeln auch gegen den Empfänger** (Abschnitt 6): umgesetzt (siehe
+  `CHANGELOG.md` 0.17.0) – neues `RuleMatchField.CounterpartyName`/`transactions.
+  counterparty_name`, gespeist aus `remitter`/`deptor`/`creditor.holderName`, die comdirect
+  schon immer mitgeliefert hat, aber bisher ungenutzt blieben (nur die IBAN wurde übernommen,
+  siehe Abschnitt 9 oben). Wichtig für echte Überweisungen, deren Buchungstext nur den
+  Verwendungszweck enthält, nicht den Empfänger-Namen – bei Kartenzahlungen steht der
+  Händlername dagegen meist schon im Buchungstext. Alt-Umsätze werden beim nächsten regulären
+  Abruf automatisch nachträglich befüllt (Upsert statt `INSERT IGNORE`, betrifft ausschließlich
+  `counterparty_name`, nie die Kategorisierung). Live verifiziert. Erledigt.
 
 ## 10. Sichere Ablage der comdirect-Zugangsdaten (umgesetzt in 0.12.0)
 
@@ -451,7 +460,7 @@ bisherigen Projekt-Philosophie, keine Infrastruktur für hypothetische künftige
 aufzubauen). Tabellen-Editor für beide Entitäten:
 
 - **Kategorien**: Name, Typ (Einnahme/Ausgabe/InternNeutral).
-- **Regeln**: Muster, geprüftes Feld (BookingText/TransactionType), Kategorie, Priorität.
+- **Regeln**: Muster, geprüftes Feld (BookingText/TransactionType/CounterpartyName, seit 0.17.0), Kategorie, Priorität.
 
 Pfad bewusst `/admin/rules/` statt des ursprünglich erwogenen bloßen `/admin/` – letzteres
 kollidiert mit dem bereits bestehenden, bewusst unauthentifizierten `POST /admin/credentials`
@@ -472,7 +481,7 @@ mehrdeutig).
 Zwei Ebenen, beide rein lesend, schreiben nichts:
 
 - **Einzel-Regel-Vorschau** (`POST /admin/rules/api/rules/preview`): prüft, ob das Muster
-  case-insensitive als Teilstring im jeweiligen Feld (BookingText/TransactionType) vorkommt – wie
+  case-insensitive als Teilstring im jeweiligen Feld (BookingText/TransactionType/CounterpartyName) vorkommt – wie
   `CategorizationLogic.Categorize` es täte, aber unabhängig von Priorität/anderen Regeln, damit die
   Kernfrage „matcht dieses Muster wirklich nur das, was ich meine?" direkt beantwortet wird, auch
   für eine noch nicht gespeicherte Kandidaten-Regel. Liefert die betroffenen echten Umsätze

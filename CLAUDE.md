@@ -83,8 +83,13 @@ Five projects under `src/`, referencing each other in one direction only
 - **`ComdirectFetch.Data`** — Dapper + MySqlConnector repositories (one per table) and
   `DatabaseMigrator`, which runs the DbUp-based migration on startup against the scripts in
   `db/migrations/` (embedded into the assembly via the `.csproj`, not copied at runtime).
-  `transactions` dedups via `INSERT IGNORE` on `(account_id, comdirect_reference)`; balance/
-  snapshot tables are plain append-only inserts. **Dapper + enum parameters**: never pass a
+  `transactions` dedups via an upsert on `(account_id, comdirect_reference)` (v0.17.0: changed
+  from plain `INSERT IGNORE` to `ON DUPLICATE KEY UPDATE counterparty_name = ...` — comdirect
+  re-sends its whole available history on every fetch with no incremental cursor, so this
+  backfills `counterparty_name` for already-stored rows the next time they come back around;
+  `category_id`/`manually_categorized` are never touched on conflict, so this can't clobber
+  existing categorization); balance/snapshot tables are plain append-only inserts. **Dapper +
+  enum parameters**: never pass a
   C# enum property directly as a Dapper parameter against a MySQL `ENUM` column — Dapper
   reduces enum parameters to their underlying numeric type internally before any registered
   `SqlMapper.TypeHandler<T>` gets a chance to run, so the handler is silently ineffective and
