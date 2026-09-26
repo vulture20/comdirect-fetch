@@ -260,7 +260,17 @@ Do this as part of the change itself, not only when the user asks for it.
   `categorization_rules` (`db/migrations/0012_..._add_comment.sql`, `VARCHAR(500) NULL`) — purely
   informational, never read by `CategorizationLogic.Categorize`; round-trips through
   `POST`/`PUT /admin/rules/api/rules` and is inline-editable per row in the admin UI (saved via
-  the existing `PUT` endpoint on blur, no separate edit mode needed).
+  the existing `PUT` endpoint on blur, no separate edit mode needed). v0.20.0 added manual
+  correction of an already-assigned category: `GET /admin/rules/api/transactions/search?q=...`
+  (same in-memory substring filter as `/rules/preview`, but over all transactions, not just
+  uncategorized ones) plus `PUT /admin/rules/api/transactions/{id}/category`, which calls the
+  pre-existing `TransactionRepository.UpdateCategoryAsync` with `manuallyCategorized: true` —
+  previously only reachable internally from `CategorizationService`, now exposed so
+  `CategorizeNewTransactionsAsync`/`RecategorizeAllAsync` (both driven by
+  `GetUncategorizedAsync`/`GetAllNonManuallyCategorizedAsync`) never overwrite a manually-set
+  category again. An unknown `categoryId` is caught as a `MySqlException` (`fk_transactions_category`,
+  error 1452) and returned as HTTP 400 instead of a raw DB error. The admin UI's "Nicht
+  kategorisiert" list also gained the same category-select-plus-save control inline.
 - Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
   — check there first before guessing at API behavior, but confirm against a real request
   when in doubt: the docs have been wrong before (see above).

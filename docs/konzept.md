@@ -524,6 +524,33 @@ eigene, direkt inline editierbare Spalte in der Regeltabelle (Speichern beim Ver
 Feldes über den bestehenden `PUT`-Endpunkt, keine neue Bearbeiten-UI nötig) sowie als
 optionales Feld beim Anlegen einer neuen Regel.
 
+### Manuelles Ändern einer bestehenden Kategorisierung (seit 0.20.0)
+
+Bis 0.19.0 ließ sich die Kategorie eines Umsatzes nur indirekt über Regeln + Neu-Kategorisierung
+setzen – keine Möglichkeit, einen bereits (ggf. falsch) kategorisierten Umsatz gezielt von Hand
+zu korrigieren, ohne eine neue, unter Umständen zu breit greifende Regel anzulegen.
+`TransactionRepository.UpdateCategoryAsync` existierte dafür bereits (intern von
+`CategorizationService` genutzt), war aber über keinen Endpunkt erreichbar. Zwei neue Bausteine:
+
+- **Suche über alle Umsätze**: `GET /admin/rules/api/transactions/search?q=...` – dieselbe
+  In-Memory-Filterung wie bei der Einzel-Regel-Vorschau (case-insensitive Teilstring gegen
+  Buchungstext/Empfänger), aber bewusst über den **kompletten** Bestand statt nur
+  unkategorisierte Umsätze, damit auch ein bereits automatisch zugewiesener, aber falscher
+  Treffer gefunden werden kann. Neues Panel „Kategorie eines Umsatzes ändern" in der
+  Web-Oberfläche dafür.
+- **Setzen**: `PUT /admin/rules/api/transactions/{id}/category` (Body `{ categoryId }`) ruft
+  `UpdateCategoryAsync(id, categoryId, manuallyCategorized: true)` auf – die Markierung als
+  manuell ist hier bewusst fest verdrahtet (nicht optional), da genau das der Zweck dieser
+  Aktion ist: künftige Regel-Anwendungen (`CategorizeNewTransactionsAsync`/
+  `RecategorizeAllAsync`) fassen diesen Umsatz danach nicht mehr an, weil beide auf
+  `GetAllNonManuallyCategorizedAsync`/`GetUncategorizedAsync` basieren. Eine unbekannte
+  `categoryId` scheitert am bestehenden Fremdschlüssel (`fk_transactions_category`) und wird als
+  HTTP 400 statt eines rohen DB-Fehlers zurückgegeben.
+- Die bestehende „Nicht kategorisiert"-Liste (0.18.0) bekam dieselbe Kategorie-Auswahl +
+  „Speichern"-Button direkt inline spendiert, da das der naheliegendste Ort ist, an dem Nutzer
+  ohnehin schon nach fehlenden Kategorien suchen – ihr Endpunkt liefert dafür jetzt zusätzlich
+  `categoryId` und `manuallyCategorized` mit.
+
 ### Zugriffsschutz
 
 Bewusst anders als die übrigen `/debug/*`/`/auth/*`-Endpunkte und auch `/admin/credentials`
