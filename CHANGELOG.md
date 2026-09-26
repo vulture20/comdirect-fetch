@@ -4,6 +4,18 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.21.0 – Einzelne unkategorisierte Umsätze direkt zuordnen
+
+Nicht jeder unkategorisierte Einzelposten rechtfertigt eine neue, dauerhafte Regel. Die
+"Nicht kategorisiert"-Liste (seit 0.18.0) hat pro Zeile jetzt eine Kategorie-Auswahl plus
+"Zuordnen"-Button. Neuer Endpunkt `PUT /admin/rules/api/transactions/{id}/category` setzt
+`category_id` und markiert den Umsatz als `manually_categorized = true` (nutzt das bereits
+bestehende `TransactionRepository.UpdateCategoryAsync`, bisher nur intern von
+`CategorizationService` verwendet), damit künftige Regel-Anwendungen
+(`CategorizeNewTransactionsAsync`/`RecategorizeAllAsync`) diese Zuordnung nicht mehr
+überschreiben. Eine unbekannte `categoryId` scheitert am bestehenden Fremdschlüssel und wird
+als HTTP 400 statt eines rohen DB-Fehlers zurückgegeben.
+
 ## 0.20.0 – Bestehende Kategorisierungsregeln editieren
 
 Die Regeltabelle in der Admin-Oberfläche (`/admin/rules/`) unterstützte bisher nur Anlegen und

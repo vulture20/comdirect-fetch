@@ -86,7 +86,7 @@
 
 <div class="panel">
   <h2>Nicht kategorisiert</h2>
-  <p class="hint" style="margin-top:-6px">Umsätze ohne echte Kategorisierung: gar keine Kategorie oder nur der Vorzeichen-Fallback (<code>Sonstige Einnahme</code>/<code>Sonstige Ausgabe</code>) - gute Kandidaten für eine neue Regel weiter unten.</p>
+  <p class="hint" style="margin-top:-6px">Umsätze ohne echte Kategorisierung: gar keine Kategorie oder nur der Vorzeichen-Fallback (<code>Sonstige Einnahme</code>/<code>Sonstige Ausgabe</code>) - gute Kandidaten für eine neue Regel weiter unten. Einzelne Umsätze lassen sich hier auch direkt einer Kategorie zuordnen, ohne eine Regel anzulegen.</p>
   <button onclick="loadUncategorized()">Laden</button>
   <div id="uncategorizedResult"></div>
 </div>
@@ -273,7 +273,7 @@ function ruleFieldOptionsHtml(selected) {
   ).join('');
 }
 
-function ruleCategoryOptionsHtml(selectedId) {
+function categoryOptionsHtml(selectedId) {
   return categories.map(c => `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
 }
 
@@ -299,7 +299,7 @@ function ruleEditRowHtml(r) {
       <td><input type="number" id="editPriority-${r.id}" value="${r.priority}"></td>
       <td><input type="text" id="editPattern-${r.id}" value="${escapeHtml(r.pattern)}"></td>
       <td><select id="editField-${r.id}">${ruleFieldOptionsHtml(r.matchField)}</select></td>
-      <td><select id="editCategory-${r.id}">${ruleCategoryOptionsHtml(r.categoryId)}</select></td>
+      <td><select id="editCategory-${r.id}">${categoryOptionsHtml(r.categoryId)}</select></td>
       <td><input type="text" id="editComment-${r.id}" value="${escapeHtml(r.comment || '')}" placeholder="optional"></td>
       <td class="row-actions">
         <button class="primary" onclick="saveEditRule(${r.id})">Speichern</button>
@@ -473,20 +473,36 @@ async function loadUncategorized() {
       return;
     }
     const rows = result.transactions.map(t => `
-      <tr>
+      <tr data-tx-id="${t.id}">
         <td>${escapeHtml(t.bookingDate)}</td>
         <td>${escapeHtml(t.bookingText || t.transactionType || '')}</td>
         <td>${escapeHtml(t.counterpartyName || '')}</td>
         <td>${t.amount}</td>
         <td>${escapeHtml(t.currentCategory || '(keine)')}</td>
+        <td><select id="txCat-${t.id}">${categoryOptionsHtml(t.categoryId)}</select></td>
+        <td><button class="primary" onclick="assignTransactionCategory(${t.id})">Zuordnen</button></td>
       </tr>
     `).join('');
     resultEl.innerHTML = `
       <p class="muted">${result.totalCount} Treffer${result.totalCount > result.transactions.length ? ' (zeige die ersten ' + result.transactions.length + ')' : ''}:</p>
-      <table><thead><tr><th>Datum</th><th>Buchungstext/Umsatztyp</th><th>Empfänger/Auftraggeber</th><th>Betrag</th><th>Aktuelle Kategorie</th></tr></thead><tbody>${rows}</tbody></table>
+      <table><thead><tr><th>Datum</th><th>Buchungstext/Umsatztyp</th><th>Empfänger/Auftraggeber</th><th>Betrag</th><th>Aktuelle Kategorie</th><th style="width:200px">Neue Kategorie</th><th style="width:100px"></th></tr></thead><tbody>${rows}</tbody></table>
     `;
   } catch (e) {
     resultEl.innerHTML = `<p class="msg error" style="display:block">Fehler: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+async function assignTransactionCategory(id) {
+  const select = document.getElementById('txCat-' + id);
+  const categoryId = Number(select.value);
+  const globalMsg = document.getElementById('globalMsg');
+  try {
+    await api('PUT', '/transactions/' + id + '/category', { categoryId });
+    showMsg(globalMsg, 'Kategorie zugeordnet.', 'ok');
+    const row = document.querySelector(`tr[data-tx-id="${id}"]`);
+    if (row) row.remove();
+  } catch (e) {
+    showMsg(globalMsg, 'Fehler: ' + e.message, 'error');
   }
 }
 

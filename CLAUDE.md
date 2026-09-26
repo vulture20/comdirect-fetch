@@ -265,7 +265,16 @@ Do this as part of the change itself, not only when the user asks for it.
   (pattern, matchField, categoryId, priority, comment) with explicit Speichern/Abbrechen buttons
   — calls the same `PUT /admin/rules/api/rules/{id}` that already existed since v0.16.0 but was
   previously only reachable outside the UI (e.g. via `curl`, as used for the KAPITAL-PLUS/XTR
-  pattern fix). No backend change; frontend-only (`wwwroot/admin/rules/index.html`).
+  pattern fix). No backend change; frontend-only (`wwwroot/admin/rules/index.html`). v0.21.0
+  added `PUT /admin/rules/api/transactions/{id}/category` (body `{ categoryId }`) so a single
+  uncategorized transaction can be assigned a category directly without a rule — calls the
+  pre-existing `TransactionRepository.UpdateCategoryAsync` with `manuallyCategorized: true`
+  (previously only reachable internally from `CategorizationService`), so
+  `CategorizeNewTransactionsAsync`/`RecategorizeAllAsync` never overwrite it again. An unknown
+  `categoryId` is caught as a `MySqlConnector.MySqlException` (`fk_transactions_category`, error
+  1452) and returned as HTTP 400. The "Nicht kategorisiert" list gained a category-select-plus-
+  "Zuordnen" control per row for this; `GET /admin/rules/api/uncategorized` now also returns
+  `categoryId`.
 - Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
   — check there first before guessing at API behavior, but confirm against a real request
   when in doubt: the docs have been wrong before (see above).
