@@ -119,7 +119,7 @@
   <h2>Regeln</h2>
   <table>
     <thead>
-      <tr><th style="width:80px">Priorität</th><th>Muster</th><th style="width:150px">Feld</th><th style="width:200px">Kategorie</th><th>Kommentar</th><th style="width:140px"></th></tr>
+      <tr><th style="width:80px">Priorität</th><th>Muster</th><th style="width:150px">Feld</th><th style="width:200px">Kategorie</th><th>Kommentar</th><th style="width:170px"></th></tr>
     </thead>
     <tbody id="ruleRows"></tbody>
     <tfoot>
@@ -265,9 +265,20 @@ async function deleteCategory(id, name) {
   }
 }
 
-function renderRules(allRules) {
-  const tbody = document.getElementById('ruleRows');
-  tbody.innerHTML = allRules.map(r => `
+let editingRuleIds = new Set();
+
+function ruleFieldOptionsHtml(selected) {
+  return ['BookingText', 'TransactionType', 'CounterpartyName'].map(f =>
+    `<option value="${f}" ${f === selected ? 'selected' : ''}>${f === 'CounterpartyName' ? 'CounterpartyName (Empfänger/Auftraggeber)' : f}</option>`
+  ).join('');
+}
+
+function ruleCategoryOptionsHtml(selectedId) {
+  return categories.map(c => `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
+}
+
+function ruleViewRowHtml(r) {
+  return `
     <tr data-id="${r.id}">
       <td>${r.priority}</td>
       <td>${escapeHtml(r.pattern)}</td>
@@ -275,10 +286,64 @@ function renderRules(allRules) {
       <td>${escapeHtml(r.categoryName || ('#' + r.categoryId))}</td>
       <td><input type="text" value="${escapeHtml(r.comment || '')}" placeholder="optional" onchange="updateRuleComment(${r.id}, this.value)"></td>
       <td class="row-actions">
+        <button onclick="startEditRule(${r.id})">Bearbeiten</button>
         <button onclick="deleteRule(${r.id})" class="danger">Löschen</button>
       </td>
     </tr>
-  `).join('');
+  `;
+}
+
+function ruleEditRowHtml(r) {
+  return `
+    <tr data-id="${r.id}">
+      <td><input type="number" id="editPriority-${r.id}" value="${r.priority}"></td>
+      <td><input type="text" id="editPattern-${r.id}" value="${escapeHtml(r.pattern)}"></td>
+      <td><select id="editField-${r.id}">${ruleFieldOptionsHtml(r.matchField)}</select></td>
+      <td><select id="editCategory-${r.id}">${ruleCategoryOptionsHtml(r.categoryId)}</select></td>
+      <td><input type="text" id="editComment-${r.id}" value="${escapeHtml(r.comment || '')}" placeholder="optional"></td>
+      <td class="row-actions">
+        <button class="primary" onclick="saveEditRule(${r.id})">Speichern</button>
+        <button onclick="cancelEditRule(${r.id})">Abbrechen</button>
+      </td>
+    </tr>
+  `;
+}
+
+function renderRules(allRules) {
+  const tbody = document.getElementById('ruleRows');
+  tbody.innerHTML = allRules.map(r => editingRuleIds.has(r.id) ? ruleEditRowHtml(r) : ruleViewRowHtml(r)).join('');
+}
+
+function startEditRule(id) {
+  editingRuleIds.add(id);
+  renderRules(rules);
+}
+
+function cancelEditRule(id) {
+  editingRuleIds.delete(id);
+  renderRules(rules);
+}
+
+async function saveEditRule(id) {
+  const pattern = document.getElementById('editPattern-' + id).value.trim();
+  const matchField = document.getElementById('editField-' + id).value;
+  const categoryId = Number(document.getElementById('editCategory-' + id).value);
+  const priority = Number(document.getElementById('editPriority-' + id).value);
+  const comment = document.getElementById('editComment-' + id).value.trim() || null;
+  const globalMsg = document.getElementById('globalMsg');
+  if (!pattern || !categoryId) { showMsg(globalMsg, 'Muster und Kategorie sind erforderlich.', 'error'); return; }
+  try {
+    const result = await api('PUT', '/rules/' + id, { pattern, matchField, categoryId, priority, comment });
+    editingRuleIds.delete(id);
+    if (result.priorityCollision) {
+      showMsg(globalMsg, `Regel gespeichert - ACHTUNG: Priorität ${priority} ist bereits vergeben, Reihenfolge zwischen diesen Regeln ist dadurch undefiniert.`, 'warn');
+    } else {
+      showMsg(globalMsg, 'Regel gespeichert.', 'ok');
+    }
+    await loadAll();
+  } catch (e) {
+    showMsg(globalMsg, 'Fehler: ' + e.message, 'error');
+  }
 }
 
 async function updateRuleComment(id, comment) {

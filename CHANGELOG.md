@@ -4,6 +4,16 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.20.0 – Bestehende Kategorisierungsregeln editieren
+
+Die Regeltabelle in der Admin-Oberfläche (`/admin/rules/`) unterstützte bisher nur Anlegen und
+Löschen einer Regel, obwohl `PUT /admin/rules/api/rules/{id}` (alle Felder: Muster, Feld,
+Kategorie, Priorität, Kommentar) seit 0.16.0 bereits existierte. Neuer „Bearbeiten"-Button pro
+Zeile versetzt sie in einen Edit-Modus (alle Felder editierbar, explizite „Speichern"/
+„Abbrechen"-Buttons statt automatischem Speichern bei jeder Änderung, um versehentliches
+Ändern zu vermeiden) und ruft dann denselben, bereits bestehenden `PUT`-Endpunkt auf – keine
+Backend-Änderung nötig. Zeigt weiterhin die bestehende Prioritäts-Kollisionswarnung.
+
 ## 0.19.0 – Kommentarfeld für Kategorisierungsregeln
 
 Neue optionale Freitext-Spalte `comment` auf `categorization_rules`

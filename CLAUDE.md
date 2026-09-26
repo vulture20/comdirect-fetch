@@ -260,7 +260,12 @@ Do this as part of the change itself, not only when the user asks for it.
   `categorization_rules` (`db/migrations/0012_..._add_comment.sql`, `VARCHAR(500) NULL`) — purely
   informational, never read by `CategorizationLogic.Categorize`; round-trips through
   `POST`/`PUT /admin/rules/api/rules` and is inline-editable per row in the admin UI (saved via
-  the existing `PUT` endpoint on blur, no separate edit mode needed).
+  the existing `PUT` endpoint on blur, no separate edit mode needed). v0.20.0 added a
+  "Bearbeiten" button per rule row that switches that row into an edit mode covering all fields
+  (pattern, matchField, categoryId, priority, comment) with explicit Speichern/Abbrechen buttons
+  — calls the same `PUT /admin/rules/api/rules/{id}` that already existed since v0.16.0 but was
+  previously only reachable outside the UI (e.g. via `curl`, as used for the KAPITAL-PLUS/XTR
+  pattern fix). No backend change; frontend-only (`wwwroot/admin/rules/index.html`).
 - Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
   — check there first before guessing at API behavior, but confirm against a real request
   when in doubt: the docs have been wrong before (see above).

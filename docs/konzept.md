@@ -524,6 +524,21 @@ eigene, direkt inline editierbare Spalte in der Regeltabelle (Speichern beim Ver
 Feldes über den bestehenden `PUT`-Endpunkt, keine neue Bearbeiten-UI nötig) sowie als
 optionales Feld beim Anlegen einer neuen Regel.
 
+### Bestehende Regeln editieren (seit 0.20.0)
+
+Bis 0.19.0 unterstützte die Regeltabelle in der Web-Oberfläche nur Anlegen und Löschen, obwohl
+`PUT /admin/rules/api/rules/{id}` (alle Felder: Muster, Feld, Kategorie, Priorität, Kommentar)
+serverseitig bereits seit 0.16.0 existierte – bislang nur außerhalb der UI nutzbar (z. B. direkt
+per `curl`, wie beim KAPITAL-PLUS/XTR-Padding-Fix genutzt). Neuer „Bearbeiten"-Button pro Zeile
+versetzt genau diese eine Zeile in einen Edit-Modus mit allen Feldern editierbar; „Speichern"
+ruft den bestehenden `PUT`-Endpunkt auf (inkl. der bereits vorhandenen Prioritäts-
+Kollisionswarnung), „Abbrechen" verwirft die Änderung ohne zu schreiben. Bewusst mit expliziten
+Speichern/Abbrechen-Buttons statt automatischem Speichern bei jeder Feldänderung (anders als der
+Kommentar, der einzeln und pro Zelle harmlos genug ist, um sofort bei jedem `onchange` zu
+speichern) – bei gleichzeitig mehreren editierbaren Feldern pro Zeile (u. a. Priorität und
+Kategorie) senkt ein expliziter Speichern-Schritt das Risiko, eine Regel durch einen Tippfehler
+unbemerkt fehlzukonfigurieren. Keine Backend-Änderung nötig, rein die Web-Oberfläche.
+
 ### Zugriffsschutz
 
 Bewusst anders als die übrigen `/debug/*`/`/auth/*`-Endpunkte und auch `/admin/credentials`
