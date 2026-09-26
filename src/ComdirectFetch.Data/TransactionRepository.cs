@@ -81,4 +81,20 @@ public sealed class TransactionRepository(IDbConnectionFactory connectionFactory
         var rows = await connection.QueryAsync<Transaction>(sql);
         return rows.AsList();
     }
+
+    /// <summary>Alle Umsätze unabhängig vom Kategorisierungsstatus - Basis für die Regel-Vorschau gegen Echtdaten (GitHub-Issue #13, KONZEPT.md Abschnitt 12).</summary>
+    public async Task<IReadOnlyList<Transaction>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        const string sql = """
+            SELECT id AS Id, account_id AS AccountId, comdirect_reference AS ComdirectReference,
+                   booking_date AS BookingDate, value_date AS ValueDate, amount AS Amount, currency AS Currency,
+                   booking_text AS BookingText, transaction_type AS TransactionType, counterparty_iban AS CounterpartyIban,
+                   category_id AS CategoryId, manually_categorized AS ManuallyCategorized, first_seen_at AS FirstSeenAt
+            FROM transactions;
+            """;
+
+        var rows = await connection.QueryAsync<Transaction>(sql);
+        return rows.AsList();
+    }
 }

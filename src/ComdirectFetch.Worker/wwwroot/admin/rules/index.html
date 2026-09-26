@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>comdirect-fetch: Kategorien &amp; Regeln</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --border: #d9dce1;
+    --text: #1f2430;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-dark: #1d4ed8;
+    --danger: #dc2626;
+    --danger-bg: #fef2f2;
+    --ok-bg: #f0fdf4;
+    --ok-border: #86efac;
+    --warn-bg: #fffbeb;
+    --warn-border: #fcd34d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  .subtitle { color: var(--muted); margin: 0 0 24px; font-size: 0.9rem; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 20px;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  th { color: var(--muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.02em; }
+  tr:last-child td { border-bottom: none; }
+  input[type=text], input[type=number], select {
+    width: 100%;
+    padding: 5px 7px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-family: inherit;
+  }
+  button {
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #fff;
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent-dark); color: #fff; }
+  button.primary:hover { background: var(--accent-dark); }
+  button.danger { color: var(--danger); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .row-actions { display: flex; gap: 6px; }
+  .add-row td { background: #fafbfc; }
+  .msg { padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 0.85rem; display: none; }
+  .msg.error { background: var(--danger-bg); border: 1px solid #fca5a5; color: var(--danger); }
+  .msg.ok { background: var(--ok-bg); border: 1px solid var(--ok-border); color: #166534; }
+  .msg.warn { background: var(--warn-bg); border: 1px solid var(--warn-border); color: #92400e; }
+  .muted { color: var(--muted); }
+  .hint { font-size: 0.8rem; color: var(--muted); margin-top: 6px; }
+  .toolbar { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 14px; }
+  .toolbar > div { flex: 1; min-width: 160px; }
+  .toolbar label { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 3px; }
+  code { background: #eef0f3; padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+</style>
+</head>
+<body>
+
+<h1>comdirect-fetch: Kategorien &amp; Regeln</h1>
+<p class="subtitle">GitHub-Issue #13 · KONZEPT.md Abschnitt 12 · Änderungen wirken sich erst auf bestehende Umsätze aus, nachdem unten „Simulieren“ geprüft und „Jetzt anwenden“ ausgelöst wurde.</p>
+
+<div id="globalMsg" class="msg"></div>
+
+<div class="panel">
+  <h2>Kategorien</h2>
+  <table>
+    <thead>
+      <tr><th>Name</th><th style="width:160px">Typ</th><th style="width:140px"></th></tr>
+    </thead>
+    <tbody id="categoryRows"></tbody>
+    <tfoot>
+      <tr class="add-row">
+        <td><input type="text" id="newCategoryName" placeholder="Neue Kategorie..."></td>
+        <td>
+          <select id="newCategoryType">
+            <option value="Einnahme">Einnahme</option>
+            <option value="Ausgabe">Ausgabe</option>
+            <option value="InternNeutral">InternNeutral</option>
+          </select>
+        </td>
+        <td><button class="primary" onclick="createCategory()">+ Anlegen</button></td>
+      </tr>
+    </tfoot>
+  </table>
+  <p class="hint">Die besonderen Kategorien <code>Intern/Neutral</code>, <code>Sonstige Einnahme</code>, <code>Sonstige Ausgabe</code> sind vor Umbenennen/Löschen geschützt (Vorzeichen-Fallback bzw. interne-Umbuchung-Erkennung hängen im Code fest an diesen Namen).</p>
+</div>
+
+<div class="panel">
+  <h2>Regeln</h2>
+  <table>
+    <thead>
+      <tr><th style="width:80px">Priorität</th><th>Muster</th><th style="width:150px">Feld</th><th style="width:200px">Kategorie</th><th style="width:140px"></th></tr>
+    </thead>
+    <tbody id="ruleRows"></tbody>
+    <tfoot>
+      <tr class="add-row">
+        <td><input type="number" id="newRulePriority" value="500"></td>
+        <td><input type="text" id="newRulePattern" placeholder="z. B. STEAMGAMES.COM"></td>
+        <td>
+          <select id="newRuleField">
+            <option value="BookingText">BookingText</option>
+            <option value="TransactionType">TransactionType</option>
+          </select>
+        </td>
+        <td><select id="newRuleCategory"></select></td>
+        <td><button class="primary" onclick="createRule()">+ Anlegen</button></td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Regel gegen Echtdaten testen</h2>
+  <p class="hint" style="margin-top:-6px">Prüft nur, ob das Muster auf das jeweilige Feld passt (case-insensitive Teilstring) - unabhängig von Priorität und anderen Regeln. Schreibt nichts.</p>
+  <div class="toolbar">
+    <div>
+      <label>Muster</label>
+      <input type="text" id="previewPattern" placeholder="z. B. STEAMGAMES.COM">
+    </div>
+    <div>
+      <label>Feld</label>
+      <select id="previewField">
+        <option value="BookingText">BookingText</option>
+        <option value="TransactionType">TransactionType</option>
+      </select>
+    </div>
+    <div style="flex:0">
+      <button class="primary" onclick="previewRule()">Testen</button>
+    </div>
+  </div>
+  <div id="previewResult"></div>
+</div>
+
+<div class="panel">
+  <h2>Simulation vor dem Übernehmen</h2>
+  <p class="hint" style="margin-top:-6px">Wendet den kompletten, aktuell gespeicherten Regelsatz auf alle nicht manuell kategorisierten Umsätze an - zeigt nur, was sich ändern würde, schreibt nichts. „Jetzt anwenden“ löst das bestehende <code>POST /debug/recategorize</code> aus.</p>
+  <button onclick="simulate()">Simulieren</button>
+  <div id="simulateResult"></div>
+</div>
+
+<script>
+const API = '/admin/rules/api';
+let categories = [];
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = 'msg ' + type;
+  el.style.display = 'block';
+}
+
+function hideMsg(el) {
+  el.style.display = 'none';
+}
+
+async function api(method, path, body) {
+  const res = await fetch(API + path, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    throw new Error((data && data.message) || ('HTTP ' + res.status));
+  }
+  return data;
+}
+
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function loadAll() {
+  const globalMsg = document.getElementById('globalMsg');
+  try {
+    const [cats, rules] = await Promise.all([api('GET', '/categories'), api('GET', '/rules')]);
+    categories = cats;
+    renderCategories(cats);
+    renderCategoryOptions(cats);
+    renderRules(rules);
+    hideMsg(globalMsg);
+  } catch (e) {
+    showMsg(globalMsg, 'Fehler beim Laden: ' + e.message, 'error');
+  }
+}
+
+function renderCategoryOptions(cats) {
+  const select = document.getElementById('newRuleCategory');
+  select.innerHTML = cats.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+}
+
+function renderCategories(cats) {
+  const tbody = document.getElementById('categoryRows');
+  tbody.innerHTML = cats.map(c => `
+    <tr data-id="${c.id}">
+      <td>${escapeHtml(c.name)}</td>
+      <td>${escapeHtml(c.type)}</td>
+      <td class="row-actions">
+        <button onclick="deleteCategory(${c.id}, '${escapeHtml(c.name).replace(/'/g, "\\'")}')" class="danger">Löschen</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function createCategory() {
+  const name = document.getElementById('newCategoryName').value.trim();
+  const type = document.getElementById('newCategoryType').value;
+  const globalMsg = document.getElementById('globalMsg');
+  if (!name) { showMsg(globalMsg, 'Name ist erforderlich.', 'error'); return; }
+  try {
+    await api('POST', '/categories', { name, type });
+    document.getElementById('newCategoryName').value = '';
+    showMsg(globalMsg, `Kategorie "${name}" angelegt.`, 'ok');
+    await loadAll();
+  } catch (e) {
+    showMsg(globalMsg, 'Fehler: ' + e.message, 'error');
+  }
+}
+
+async function deleteCategory(id, name) {
+  if (!confirm(`Kategorie "${name}" wirklich löschen?`)) return;
+  const globalMsg = document.getElementById('globalMsg');
+  try {
+    await api('DELETE', '/categories/' + id);
+    showMsg(globalMsg, `Kategorie "${name}" gelöscht.`, 'ok');
+    await loadAll();
+  } catch (e) {
+    showMsg(globalMsg, 'Fehler: ' + e.message, 'error');
+  }
+}
+
+function renderRules(rules) {
+  const tbody = document.getElementById('ruleRows');
+  tbody.innerHTML = rules.map(r => `
+    <tr data-id="${r.id}">
+      <td>${r.priority}</td>
+      <td>${escapeHtml(r.pattern)}</td>
+      <td>${escapeHtml(r.matchField)}</td>
+      <td>${escapeHtml(r.categoryName || ('#' + r.categoryId))}</td>
+      <td class="row-actions">
+        <button onclick="deleteRule(${r.id})" class="danger">Löschen</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function createRule() {
+  const pattern = document.getElementById('newRulePattern').value.trim();
+  const matchField = document.getElementById('newRuleField').value;
+  const categoryId = Number(document.getElementById('newRuleCategory').value);
+  const priority = Number(document.getElementById('newRulePriority').value);
+  const globalMsg = document.getElementById('globalMsg');
+  if (!pattern || !categoryId) { showMsg(globalMsg, 'Muster und Kategorie sind erforderlich.', 'error'); return; }
+  try {
+    const result = await api('POST', '/rules', { pattern, matchField, categoryId, priority });
+    document.getElementById('newRulePattern').value = '';
+    if (result.priorityCollision) {
+      showMsg(globalMsg, `Regel angelegt - ACHTUNG: Priorität ${priority} ist bereits vergeben, Reihenfolge zwischen diesen Regeln ist dadurch undefiniert.`, 'warn');
+    } else {
+      showMsg(globalMsg, 'Regel angelegt.', 'ok');
+    }
+    await loadAll();
+  } catch (e) {
+    showMsg(globalMsg, 'Fehler: ' + e.message, 'error');
+  }
+}
+
+async function deleteRule(id) {
+  if (!confirm('Regel wirklich löschen?')) return;
+  const globalMsg = document.getElementById('globalMsg');
+  try {
+    await api('DELETE', '/rules/' + id);
+    showMsg(globalMsg, 'Regel gelöscht.', 'ok');
+    await loadAll();
+  } catch (e) {
+    showMsg(globalMsg, 'Fehler: ' + e.message, 'error');
+  }
+}
+
+async function previewRule() {
+  const pattern = document.getElementById('previewPattern').value.trim();
+  const matchField = document.getElementById('previewField').value;
+  const resultEl = document.getElementById('previewResult');
+  if (!pattern) { resultEl.innerHTML = '<p class="muted">Muster eingeben.</p>'; return; }
+  resultEl.innerHTML = '<p class="muted">Lädt...</p>';
+  try {
+    const result = await api('POST', '/rules/preview', { pattern, matchField });
+    if (result.totalMatches === 0) {
+      resultEl.innerHTML = '<p class="muted">Keine Treffer.</p>';
+      return;
+    }
+    const rows = result.matches.map(m => `
+      <tr>
+        <td>${escapeHtml(m.bookingText || m.transactionType || '')}</td>
+        <td>${m.amount}</td>
+        <td>${escapeHtml(m.currentCategory || '(keine)')}</td>
+      </tr>
+    `).join('');
+    resultEl.innerHTML = `
+      <p class="muted">${result.totalMatches} Treffer${result.totalMatches > result.matches.length ? ' (zeige die ersten ' + result.matches.length + ')' : ''}:</p>
+      <table><thead><tr><th>Buchungstext/Umsatztyp</th><th>Betrag</th><th>Aktuelle Kategorie</th></tr></thead><tbody>${rows}</tbody></table>
+    `;
+  } catch (e) {
+    resultEl.innerHTML = `<p class="msg error" style="display:block">Fehler: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+async function simulate() {
+  const resultEl = document.getElementById('simulateResult');
+  resultEl.innerHTML = '<p class="muted">Lädt...</p>';
+  try {
+    const result = await api('POST', '/rules/simulate', null);
+    if (result.changedCount === 0) {
+      resultEl.innerHTML = '<p class="muted">Keine Änderungen - der aktuelle Bestand ist bereits konsistent mit dem gespeicherten Regelsatz.</p>';
+      return;
+    }
+    const rows = result.changes.map(c => `
+      <tr>
+        <td>${escapeHtml(c.bookingText || '')}</td>
+        <td>${c.amount}</td>
+        <td>${escapeHtml(c.oldCategory || '(keine)')}</td>
+        <td>${escapeHtml(c.newCategory || '(keine)')}</td>
+      </tr>
+    `).join('');
+    resultEl.innerHTML = `
+      <p>${result.changedCount} Umsätze würden sich ändern:</p>
+      <table><thead><tr><th>Buchungstext</th><th>Betrag</th><th>Bisher</th><th>Neu</th></tr></thead><tbody>${rows}</tbody></table>
+      <p style="margin-top:10px"><button class="primary" onclick="applyRecategorize()">Jetzt anwenden (${result.changedCount} Umsätze)</button></p>
+    `;
+  } catch (e) {
+    resultEl.innerHTML = `<p class="msg error" style="display:block">Fehler: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+async function applyRecategorize() {
+  const globalMsg = document.getElementById('globalMsg');
+  try {
+    const res = await fetch('/debug/recategorize', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || ('HTTP ' + res.status));
+    showMsg(globalMsg, data.message, 'ok');
+    await simulate();
+  } catch (e) {
+    showMsg(globalMsg, 'Fehler beim Anwenden: ' + e.message, 'error');
+  }
+}
+
+loadAll();
+</script>
+
+</body>
+</html>

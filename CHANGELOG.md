@@ -4,6 +4,36 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.16.0 – Bedienoberfläche für Kategorien/Regeln (Issue #13)
+
+`categories`/`categorization_rules` waren im Code bisher rein lesbar – jede Änderung brauchte
+eine neue append-only Migration, es gab keine Möglichkeit, ein neues Muster vorab gegen echte
+Buchungstexte zu prüfen. Neue, vom Worker selbst ausgelieferte Web-Oberfläche
+(`wwwroot/admin/rules/index.html`, kein Build-Toolchain/Framework) unter `/admin/rules/`:
+
+- **CRUD** für Kategorien und Regeln (`CategoryRepository`/`CategorizationRuleRepository` haben
+  jetzt `CreateAsync`/`UpdateAsync`/`DeleteAsync`/`GetByIdAsync`, zuvor nur `GetAll*`), inkl.
+  weicher Warnung bei doppelt vergebener Regel-Priorität.
+- **Testen gegen Echtdaten** auf zwei Ebenen, beide rein lesend:
+  Einzel-Regel-Vorschau (`POST /admin/rules/api/rules/preview` – welche echten Umsätze ein
+  Kandidaten-Muster träfe) und volle Simulation (`POST /admin/rules/api/rules/simulate` –
+  neues `CategorizationService.SimulateRecategorizationAsync`, identische Berechnung wie
+  `RecategorizeAllAsync`, aber ohne zu schreiben), mit „Jetzt anwenden" gegen das bestehende
+  `POST /debug/recategorize`.
+- **Zugriffsschutz**: `/admin/rules/*` (bewusst nicht das bereits belegte, andersartig
+  vertrauensvolle `/admin/credentials`, Issue #5) verlangt HTTP-Basic-Auth über ein neues
+  `Admin__Password` (`ComdirectFetch.Worker.AdminAuth`, unit-getestet, konstante Vergleichszeit) –
+  ohne gesetztes Passwort liefert `/admin/rules/*` durchgängig HTTP 503 statt ungeschützt
+  erreichbar zu sein.
+- **Schutz der Spezial-Kategorien**: neues `ComdirectFetch.Domain.ProtectedCategoryNames`
+  (zentral von `CategorizationService` und den neuen Endpunkten referenziert) lehnt Löschen/
+  Umbenennen von „Intern/Neutral", „Sonstige Einnahme", „Sonstige Ausgabe" serverseitig ab.
+
+Live verifiziert gegen die echte DB: Kategorie angelegt/umbenannt/gelöscht, Regel angelegt mit
+Prioritäts-Kollisionswarnung, Einzel-Regel-Vorschau und volle Simulation gegen echte Umsätze
+getestet, Schutz der Spezial-Kategorien sowie der `Admin__Password`-Zugriffsschutz (503 ohne
+Passwort, 401 mit falschem Passwort) bestätigt. 6 neue Unit-Tests für `AdminAuth`.
+
 ## 0.15.0 – Asset-Allokation nach Anlageklasse (Issue #4)
 
 `grafana/dashboards/depot.json` zeigte die Asset-Allokation bisher nur je Einzelposition. Klärung

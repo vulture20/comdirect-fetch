@@ -43,6 +43,32 @@ public sealed class CategorizationService(
         return (total, updated);
     }
 
+    /// <summary>
+    /// Berechnet, was <see cref="RecategorizeAllAsync"/> ändern würde, OHNE zu schreiben
+    /// (GitHub-Issue #13, KONZEPT.md Abschnitt 12 – "volle Simulation" vor dem Commit). Liefert
+    /// nur die Umsätze, bei denen sich die Kategorie tatsächlich ändern würde.
+    /// </summary>
+    public async Task<IReadOnlyList<CategorizationDiffEntry>> SimulateRecategorizationAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var candidates = await transactionRepository.GetAllNonManuallyCategorizedAsync(cancellationToken);
+        var context = await LoadContextAsync(cancellationToken);
+
+        var diff = new List<CategorizationDiffEntry>();
+        foreach (var transaction in candidates)
+        {
+            var newCategoryId = CategorizationLogic.Categorize(
+                transaction, context.OwnIbans, context.InternalCategoryId, context.Rules,
+                context.FallbackIncomeCategoryId, context.FallbackExpenseCategoryId);
+            if (newCategoryId != transaction.CategoryId)
+            {
+                diff.Add(new CategorizationDiffEntry(transaction, transaction.CategoryId, newCategoryId));
+            }
+        }
+
+        return diff;
+    }
+
     private async Task<(int Total, int Updated)> ApplyCategorizationAsync(
         IReadOnlyList<Transaction> transactions, CancellationToken cancellationToken)
     {
@@ -51,25 +77,14 @@ public sealed class CategorizationService(
             return (0, 0);
         }
 
-        var accounts = await accountRepository.GetAllAsync(cancellationToken);
-        var ownIbans = accounts
-            .Where(a => !string.IsNullOrWhiteSpace(a.Iban))
-            .Select(a => a.Iban!)
-            .ToArray();
-
-        var categoriesByName = (await categoryRepository.GetAllAsync(cancellationToken))
-            .ToDictionary(c => c.Name, c => c);
-        var rules = await ruleRepository.GetAllOrderedByPriorityAsync(cancellationToken);
-
-        categoriesByName.TryGetValue("Intern/Neutral", out var internalCategory);
-        categoriesByName.TryGetValue("Sonstige Einnahme", out var fallbackIncome);
-        categoriesByName.TryGetValue("Sonstige Ausgabe", out var fallbackExpense);
+        var context = await LoadContextAsync(cancellationToken);
 
         var updated = 0;
         foreach (var transaction in transactions)
         {
             var categoryId = CategorizationLogic.Categorize(
-                transaction, ownIbans, internalCategory?.Id, rules, fallbackIncome?.Id, fallbackExpense?.Id);
+                transaction, context.OwnIbans, context.InternalCategoryId, context.Rules,
+                context.FallbackIncomeCategoryId, context.FallbackExpenseCategoryId);
             if (categoryId is null)
             {
                 continue;
@@ -81,4 +96,33 @@ public sealed class CategorizationService(
 
         return (transactions.Count, updated);
     }
+
+    private async Task<CategorizationContext> LoadContextAsync(CancellationToken cancellationToken)
+    {
+        var accounts = await accountRepository.GetAllAsync(cancellationToken);
+        var ownIbans = accounts
+            .Where(a => !string.IsNullOrWhiteSpace(a.Iban))
+            .Select(a => a.Iban!)
+            .ToArray();
+
+        var categoriesByName = (await categoryRepository.GetAllAsync(cancellationToken))
+            .ToDictionary(c => c.Name, c => c);
+        var rules = await ruleRepository.GetAllOrderedByPriorityAsync(cancellationToken);
+
+        categoriesByName.TryGetValue(ProtectedCategoryNames.Internal, out var internalCategory);
+        categoriesByName.TryGetValue(ProtectedCategoryNames.FallbackIncome, out var fallbackIncome);
+        categoriesByName.TryGetValue(ProtectedCategoryNames.FallbackExpense, out var fallbackExpense);
+
+        return new CategorizationContext(ownIbans, internalCategory?.Id, rules, fallbackIncome?.Id, fallbackExpense?.Id);
+    }
+
+    private sealed record CategorizationContext(
+        string[] OwnIbans,
+        long? InternalCategoryId,
+        IReadOnlyList<CategorizationRule> Rules,
+        long? FallbackIncomeCategoryId,
+        long? FallbackExpenseCategoryId);
 }
+
+/// <summary>Ein Umsatz, dessen Kategorie sich bei einer Neu-Kategorisierung ändern würde (GitHub-Issue #13).</summary>
+public sealed record CategorizationDiffEntry(Transaction Transaction, long? OldCategoryId, long? NewCategoryId);

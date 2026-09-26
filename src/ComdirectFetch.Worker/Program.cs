@@ -17,6 +17,7 @@ builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection(Dat
 builder.Services.Configure<FetchOptions>(builder.Configuration.GetSection(FetchOptions.SectionName));
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));
 builder.Services.Configure<NotificationOptions>(builder.Configuration.GetSection(NotificationOptions.SectionName));
+builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection(AdminOptions.SectionName));
 
 builder.Services.AddSingleton<ComdirectRequestContext>();
 builder.Services.AddSingleton<CredentialProvider>();
@@ -86,6 +87,39 @@ using (var scope = app.Services.CreateScope())
     await scope.ServiceProvider.GetRequiredService<ComdirectAuthCoordinator>().TryRestoreAsync();
 }
 
+// GitHub-Issue #13, KONZEPT.md Abschnitt 12: /admin/rules/* (Web-Oberfläche + zugehörige API für
+// Kategorien/Regeln) ist bewusst strenger geschützt als die übrigen, unauthentifizierten
+// /debug/*-/auth/*-Endpunkte (und auch /admin/credentials, Issue #10 B - anderer Pfad, andere
+// Vertrauensebene), da hier dauerhafte Konfiguration geändert wird, nicht nur eine Aktion
+// angestoßen. Ohne gesetztes Admin__Password bleibt /admin/rules/* komplett deaktiviert (503)
+// statt ungeschützt erreichbar.
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/admin/rules"))
+    {
+        var adminPassword = context.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<AdminOptions>>().Value.Password;
+        if (string.IsNullOrEmpty(adminPassword))
+        {
+            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            await context.Response.WriteAsJsonAsync(new { Message = "Admin__Password nicht konfiguriert - /admin/rules/* ist deaktiviert." });
+            return;
+        }
+
+        if (!AdminAuth.TryValidate(context.Request.Headers.Authorization.ToString(), adminPassword))
+        {
+            context.Response.Headers.WWWAuthenticate = "Basic realm=\"comdirect-fetch admin\"";
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsJsonAsync(new { Message = "Nicht autorisiert." });
+            return;
+        }
+    }
+
+    await next(context);
+});
+app.UseStaticFiles();
+
+app.MapGet("/admin/rules", () => Results.Redirect("/admin/rules/index.html"));
+
 // KONZEPT.md Abschnitt 3: TAN-Freigabe kann der Container nicht automatisch erledigen.
 // /auth/start löst die TAN-Challenge aus (z. B. PushTAN-Benachrichtigung), /auth/confirm
 // schließt die Freigabe ab (ggf. mit manuell eingegebenem TAN-Code bei photoTAN/mobileTAN).
@@ -143,6 +177,187 @@ app.MapPost("/debug/recategorize", async (CategorizationService categorization, 
     });
 });
 
+// GitHub-Issue #13, KONZEPT.md Abschnitt 12: Kategorien-CRUD für die neue Web-Oberfläche.
+// Geschützt durch die /admin/rules-Middleware oben.
+app.MapGet("/admin/rules/api/categories", async (CategoryRepository categories, CancellationToken ct) =>
+    Results.Ok((await categories.GetAllAsync(ct)).Select(c => new { c.Id, c.Name, Type = c.Type.ToString() })));
+
+app.MapPost("/admin/rules/api/categories", async (CategoryRepository categories, CategoryRequest body, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(body.Name) || !Enum.TryParse<CategoryType>(body.Type, out var type))
+    {
+        return Results.BadRequest(new { Message = "name und ein gültiger type (Einnahme/Ausgabe/InternNeutral) sind erforderlich." });
+    }
+
+    var id = await categories.CreateAsync(new Category { Name = body.Name, Type = type }, ct);
+    return Results.Ok(new { Id = id });
+});
+
+app.MapPut("/admin/rules/api/categories/{id:long}", async (long id, CategoryRepository categories, CategoryRequest body, CancellationToken ct) =>
+{
+    var existing = await categories.GetByIdAsync(id, ct);
+    if (existing is null)
+    {
+        return Results.NotFound();
+    }
+
+    if (ProtectedCategoryNames.All.Contains(existing.Name) && !string.Equals(existing.Name, body.Name, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { Message = $"'{existing.Name}' ist eine besondere Kategorie und kann nicht umbenannt werden." });
+    }
+
+    if (string.IsNullOrWhiteSpace(body.Name) || !Enum.TryParse<CategoryType>(body.Type, out var type))
+    {
+        return Results.BadRequest(new { Message = "name und ein gültiger type (Einnahme/Ausgabe/InternNeutral) sind erforderlich." });
+    }
+
+    await categories.UpdateAsync(new Category { Id = id, Name = body.Name, Type = type }, ct);
+    return Results.Ok();
+});
+
+app.MapDelete("/admin/rules/api/categories/{id:long}", async (long id, CategoryRepository categories, CancellationToken ct) =>
+{
+    var existing = await categories.GetByIdAsync(id, ct);
+    if (existing is null)
+    {
+        return Results.NotFound();
+    }
+
+    if (ProtectedCategoryNames.All.Contains(existing.Name))
+    {
+        return Results.BadRequest(new { Message = $"'{existing.Name}' ist eine besondere Kategorie und kann nicht gelöscht werden." });
+    }
+
+    try
+    {
+        await categories.DeleteAsync(id, ct);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { Message = $"Löschen fehlgeschlagen (wird die Kategorie noch von Regeln oder Umsätzen referenziert?): {ex.Message}" });
+    }
+
+    return Results.Ok();
+});
+
+// GitHub-Issue #13, KONZEPT.md Abschnitt 12: Regel-CRUD für die neue Web-Oberfläche, inkl.
+// "weicher" Prioritäts-Kollisionswarnung (kein Hard-Block).
+app.MapGet("/admin/rules/api/rules", async (CategorizationRuleRepository rules, CategoryRepository categories, CancellationToken ct) =>
+{
+    var allRules = await rules.GetAllOrderedByPriorityAsync(ct);
+    var categoryNames = (await categories.GetAllAsync(ct)).ToDictionary(c => c.Id, c => c.Name);
+    return Results.Ok(allRules.Select(r => new
+    {
+        r.Id,
+        r.Pattern,
+        MatchField = r.MatchField.ToString(),
+        r.CategoryId,
+        CategoryName = categoryNames.GetValueOrDefault(r.CategoryId),
+        r.Priority,
+    }));
+});
+
+app.MapPost("/admin/rules/api/rules", async (CategorizationRuleRepository rules, RuleRequest body, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(body.Pattern) || !Enum.TryParse<RuleMatchField>(body.MatchField, out var matchField) || body.CategoryId is null)
+    {
+        return Results.BadRequest(new { Message = "pattern, matchField (BookingText/TransactionType) und categoryId sind erforderlich." });
+    }
+
+    var priorityCollision = await rules.PriorityInUseAsync(body.Priority, excludeId: null, ct);
+    var id = await rules.CreateAsync(new CategorizationRule { Pattern = body.Pattern, MatchField = matchField, CategoryId = body.CategoryId.Value, Priority = body.Priority }, ct);
+    return Results.Ok(new { Id = id, PriorityCollision = priorityCollision });
+});
+
+app.MapPut("/admin/rules/api/rules/{id:long}", async (long id, CategorizationRuleRepository rules, RuleRequest body, CancellationToken ct) =>
+{
+    var existing = await rules.GetByIdAsync(id, ct);
+    if (existing is null)
+    {
+        return Results.NotFound();
+    }
+
+    if (string.IsNullOrWhiteSpace(body.Pattern) || !Enum.TryParse<RuleMatchField>(body.MatchField, out var matchField) || body.CategoryId is null)
+    {
+        return Results.BadRequest(new { Message = "pattern, matchField (BookingText/TransactionType) und categoryId sind erforderlich." });
+    }
+
+    var priorityCollision = await rules.PriorityInUseAsync(body.Priority, excludeId: id, ct);
+    await rules.UpdateAsync(new CategorizationRule { Id = id, Pattern = body.Pattern, MatchField = matchField, CategoryId = body.CategoryId.Value, Priority = body.Priority }, ct);
+    return Results.Ok(new { PriorityCollision = priorityCollision });
+});
+
+app.MapDelete("/admin/rules/api/rules/{id:long}", async (long id, CategorizationRuleRepository rules, CancellationToken ct) =>
+{
+    await rules.DeleteAsync(id, ct);
+    return Results.Ok();
+});
+
+// GitHub-Issue #13, KONZEPT.md Abschnitt 12: Testen gegen Echtdaten, Ebene 1 - Einzel-Regel-
+// Vorschau. Rein lesend: prüft nur, ob das Muster auf das jeweilige Feld passt (wie
+// CategorizationLogic.Categorize es täte), unabhängig von Priorität/anderen Regeln - reicht für
+// die Kernfrage "matcht dieses Muster wirklich nur das, was ich meine?".
+app.MapPost("/admin/rules/api/rules/preview", async (
+    RulePreviewRequest body,
+    TransactionRepository transactions,
+    CategoryRepository categories,
+    CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(body.Pattern) || !Enum.TryParse<RuleMatchField>(body.MatchField, out var matchField))
+    {
+        return Results.BadRequest(new { Message = "pattern und matchField (BookingText/TransactionType) sind erforderlich." });
+    }
+
+    var categoryNames = (await categories.GetAllAsync(ct)).ToDictionary(c => c.Id, c => c.Name);
+    var matched = (await transactions.GetAllAsync(ct))
+        .Where(t =>
+        {
+            var haystack = matchField == RuleMatchField.TransactionType ? t.TransactionType : t.BookingText;
+            return haystack is not null && haystack.Contains(body.Pattern, StringComparison.OrdinalIgnoreCase);
+        })
+        .ToList();
+
+    return Results.Ok(new
+    {
+        TotalMatches = matched.Count,
+        Matches = matched.Take(50).Select(t => new
+        {
+            t.Id,
+            t.BookingText,
+            t.TransactionType,
+            t.Amount,
+            CurrentCategory = t.CategoryId is { } catId ? categoryNames.GetValueOrDefault(catId) : null,
+        }),
+    });
+});
+
+// GitHub-Issue #13, KONZEPT.md Abschnitt 12: Testen gegen Echtdaten, Ebene 2 - volle Simulation
+// des aktuell gespeicherten Regelsatzes gegen alle nicht manuell kategorisierten Umsätze, ohne
+// zu schreiben. Bestätigen im Frontend löst das bereits bestehende /debug/recategorize aus, das
+// dann tatsächlich schreibt.
+app.MapPost("/admin/rules/api/rules/simulate", async (
+    CategorizationService categorization,
+    CategoryRepository categories,
+    CancellationToken ct) =>
+{
+    var diff = await categorization.SimulateRecategorizationAsync(ct);
+    var categoryNames = (await categories.GetAllAsync(ct)).ToDictionary(c => c.Id, c => c.Name);
+    string? NameOf(long? id) => id is { } v ? categoryNames.GetValueOrDefault(v) : null;
+
+    return Results.Ok(new
+    {
+        ChangedCount = diff.Count,
+        Changes = diff.Select(d => new
+        {
+            d.Transaction.Id,
+            d.Transaction.BookingText,
+            d.Transaction.Amount,
+            OldCategory = NameOf(d.OldCategoryId),
+            NewCategory = NameOf(d.NewCategoryId),
+        }),
+    });
+});
+
 // KONZEPT.md Abschnitt 10 B: Bootstrap-Schritt für Zugangsnummer/PIN - verschlüsselt sie mit
 // dem dedizierten, dateibasierten Schlüssel (Comdirect__CredentialKeyFilePath) und legt sie in
 // credential_store ab. Danach können Comdirect__Username/Comdirect__Password aus .env entfernt
@@ -189,3 +404,6 @@ app.Run();
 
 internal sealed record TanConfirmRequest(string? TanCode);
 internal sealed record SetCredentialsRequest(string? Username, string? Password);
+internal sealed record CategoryRequest(string? Name, string? Type);
+internal sealed record RuleRequest(string? Pattern, string? MatchField, long? CategoryId, int Priority);
+internal sealed record RulePreviewRequest(string? Pattern, string? MatchField);
