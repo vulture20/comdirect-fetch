@@ -169,7 +169,11 @@ keine allgemeine Regel lohnt. Jede Regel kann außerdem einen optionalen Freitex
 0.19.0) – etwa warum sie existiert oder welcher Buchungstext sie ausgelöst hat –, direkt in der
 Regeltabelle editierbar. Über den „Bearbeiten"-Button pro Regel (seit 0.20.0) lassen sich auch
 Muster, Feld, Kategorie und Priorität einer bestehenden Regel nachträglich ändern, statt sie
-löschen und neu anlegen zu müssen. Setzt `Admin__Password`
+löschen und neu anlegen zu müssen. Eine zweite Seite, „Alle Umsätze"
+(`/admin/rules/transactions/`, seit 0.22.0, von beiden Seiten aus verlinkt), zeigt sämtliche
+Umsätze mit Datum, Buchungstext, Empfänger, Betrag, Konto und Kategorie – mit Pagination sowie
+Suche/Filter nach Freitext, Kategorie, Konto, Zeitraum und Betrag, und derselben
+Kategorie-Zuordnung pro Zeile wie in der „Nicht kategorisiert"-Liste. Setzt `Admin__Password`
 in `.env` voraus (HTTP Basic Auth, Benutzername beliebig) –
 ohne gesetztes Passwort liefert `/admin/rules/*` durchgängig HTTP 503 statt ungeschützt erreichbar
 zu sein. Bewusst strenger geschützt als die übrigen `/debug/*`/`/auth/*`-Endpunkte, da hier

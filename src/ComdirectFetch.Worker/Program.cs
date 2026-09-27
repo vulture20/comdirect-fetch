@@ -119,6 +119,7 @@ app.Use(async (context, next) =>
 app.UseStaticFiles();
 
 app.MapGet("/admin/rules", () => Results.Redirect("/admin/rules/index.html"));
+app.MapGet("/admin/rules/transactions", () => Results.Redirect("/admin/rules/transactions/index.html"));
 
 // KONZEPT.md Abschnitt 3: TAN-Freigabe kann der Container nicht automatisch erledigen.
 // /auth/start löst die TAN-Challenge aus (z. B. PushTAN-Benachrichtigung), /auth/confirm
@@ -181,6 +182,10 @@ app.MapPost("/debug/recategorize", async (CategorizationService categorization, 
 // Geschützt durch die /admin/rules-Middleware oben.
 app.MapGet("/admin/rules/api/categories", async (CategoryRepository categories, CancellationToken ct) =>
     Results.Ok((await categories.GetAllAsync(ct)).Select(c => new { c.Id, c.Name, Type = c.Type.ToString() })));
+
+// Für den Konto-Filter auf der neuen "Alle Umsätze"-Seite (/admin/rules/transactions/).
+app.MapGet("/admin/rules/api/accounts", async (AccountRepository accounts, CancellationToken ct) =>
+    Results.Ok((await accounts.GetAllAsync(ct)).Select(a => new { a.Id, a.DisplayName, a.Iban })));
 
 app.MapPost("/admin/rules/api/categories", async (CategoryRepository categories, CategoryRequest body, CancellationToken ct) =>
 {
@@ -431,6 +436,100 @@ app.MapPut("/admin/rules/api/transactions/{id:long}/category", async (
     }
 
     return Results.Ok();
+});
+
+// Neue Admin-Seite "Alle Umsätze" (/admin/rules/transactions/): paginierte, filterbare Übersicht
+// über ALLE Umsätze (nicht nur unkategorisierte) mit Kategorie, Konto etc. In-Memory-Filterung
+// über TransactionRepository.GetAllAsync wie bei /rules/preview und /uncategorized - konsistent
+// mit dem bestehenden Muster dieses Projekts statt einer neuen dynamischen SQL-Abfrage.
+app.MapGet("/admin/rules/api/transactions/list", async (
+    string? q,
+    long? categoryId,
+    bool? uncategorized,
+    long? accountId,
+    DateOnly? dateFrom,
+    DateOnly? dateTo,
+    decimal? amountMin,
+    decimal? amountMax,
+    int? page,
+    int? pageSize,
+    TransactionRepository transactions,
+    CategoryRepository categories,
+    AccountRepository accounts,
+    CancellationToken ct) =>
+{
+    var effectivePage = page is > 0 ? page.Value : 1;
+    var effectivePageSize = page is not null && pageSize is > 0 and <= 500 ? pageSize!.Value : 50;
+
+    var categoryNames = (await categories.GetAllAsync(ct)).ToDictionary(c => c.Id, c => c.Name);
+    var accountNames = (await accounts.GetAllAsync(ct)).ToDictionary(a => a.Id, a => a.DisplayName);
+
+    IEnumerable<Transaction> filtered = await transactions.GetAllAsync(ct);
+
+    if (!string.IsNullOrWhiteSpace(q))
+    {
+        filtered = filtered.Where(t =>
+            (t.BookingText is not null && t.BookingText.Contains(q, StringComparison.OrdinalIgnoreCase)) ||
+            (t.CounterpartyName is not null && t.CounterpartyName.Contains(q, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    if (uncategorized == true)
+    {
+        filtered = filtered.Where(t => t.CategoryId is null);
+    }
+    else if (categoryId is not null)
+    {
+        filtered = filtered.Where(t => t.CategoryId == categoryId);
+    }
+
+    if (accountId is not null)
+    {
+        filtered = filtered.Where(t => t.AccountId == accountId);
+    }
+
+    if (dateFrom is not null)
+    {
+        filtered = filtered.Where(t => t.BookingDate >= dateFrom.Value);
+    }
+
+    if (dateTo is not null)
+    {
+        filtered = filtered.Where(t => t.BookingDate <= dateTo.Value);
+    }
+
+    if (amountMin is not null)
+    {
+        filtered = filtered.Where(t => t.Amount >= amountMin.Value);
+    }
+
+    if (amountMax is not null)
+    {
+        filtered = filtered.Where(t => t.Amount <= amountMax.Value);
+    }
+
+    var matched = filtered.OrderByDescending(t => t.BookingDate).ThenByDescending(t => t.Id).ToList();
+
+    return Results.Ok(new
+    {
+        TotalCount = matched.Count,
+        Page = effectivePage,
+        PageSize = effectivePageSize,
+        Transactions = matched.Skip((effectivePage - 1) * effectivePageSize).Take(effectivePageSize).Select(t => new
+        {
+            t.Id,
+            t.BookingDate,
+            t.BookingText,
+            t.TransactionType,
+            t.CounterpartyName,
+            t.Amount,
+            t.Currency,
+            t.AccountId,
+            AccountName = accountNames.GetValueOrDefault(t.AccountId),
+            t.CategoryId,
+            CategoryName = t.CategoryId is { } catId ? categoryNames.GetValueOrDefault(catId) : null,
+            t.ManuallyCategorized,
+        }),
+    });
 });
 
 // KONZEPT.md Abschnitt 10 B: Bootstrap-Schritt für Zugangsnummer/PIN - verschlüsselt sie mit
