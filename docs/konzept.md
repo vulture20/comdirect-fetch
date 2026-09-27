@@ -550,6 +550,27 @@ speichern) – bei gleichzeitig mehreren editierbaren Feldern pro Zeile (u. a. P
 Kategorie) senkt ein expliziter Speichern-Schritt das Risiko, eine Regel durch einen Tippfehler
 unbemerkt fehlzukonfigurieren. Keine Backend-Änderung nötig, rein die Web-Oberfläche.
 
+### Neue Seite „Alle Umsätze" (seit 0.22.0)
+
+Bisher zeigte die Admin-Oberfläche Umsätze nur ausschnitthaft (die „Nicht kategorisiert"-Liste,
+begrenzt auf 100 Treffer, nur unkategorisierte). Neue, eigenständige Seite
+`wwwroot/admin/rules/transactions/index.html`, erreichbar unter `/admin/rules/transactions/`
+(bewusst als Unterpfad von `/admin/rules/`, damit sie automatisch von der bestehenden
+Basic-Auth-Middleware erfasst wird – die prüft per `StartsWithSegments("/admin/rules")`, ein
+neuer eigener Middleware-Eintrag wäre unnötig gewesen). Zeigt **alle** Umsätze (nicht nur
+unkategorisierte) mit Datum, Buchungstext/Umsatztyp, Empfänger, Betrag, Konto und Kategorie,
+inklusive Pagination (50 Zeilen/Seite) und Filterung nach: Freitext (Buchungstext/Empfänger,
+gleiche Contains-Semantik wie überall sonst), Kategorie (inkl. Sonderwert „Ohne Kategorie"),
+Konto, Buchungsdatum-Zeitraum sowie Betrag von/bis. Neuer Endpunkt
+`GET /admin/rules/api/transactions/list` filtert weiterhin in-memory über
+`TransactionRepository.GetAllAsync` (konsistent mit `/rules/preview` und `/uncategorized`, statt
+eine neue dynamische SQL-Abfrage einzuführen) und paginiert erst danach mit `Skip`/`Take`.
+Zusätzlich `GET /admin/rules/api/accounts` für den Konto-Filter. Die Kategorie ist pro Zeile
+direkt änderbar über denselben `PUT /admin/rules/api/transactions/{id}/category`-Endpunkt wie
+in der „Nicht kategorisiert"-Liste (0.21.0). Beide Admin-Seiten verlinken jetzt gegenseitig
+aufeinander. Das gemeinsame CSS wurde aus `index.html` nach `wwwroot/admin/rules/admin.css`
+ausgelagert, damit beide Seiten optisch konsistent bleiben, ohne es zu duplizieren.
+
 ### Zugriffsschutz
 
 Bewusst anders als die übrigen `/debug/*`/`/auth/*`-Endpunkte und auch `/admin/credentials`

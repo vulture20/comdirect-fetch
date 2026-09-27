@@ -274,7 +274,17 @@ Do this as part of the change itself, not only when the user asks for it.
   `categoryId` is caught as a `MySqlConnector.MySqlException` (`fk_transactions_category`, error
   1452) and returned as HTTP 400. The "Nicht kategorisiert" list gained a category-select-plus-
   "Zuordnen" control per row for this; `GET /admin/rules/api/uncategorized` now also returns
-  `categoryId`.
+  `categoryId`. v0.22.0 added a second admin page, `wwwroot/admin/rules/transactions/index.html`
+  served at `/admin/rules/transactions/` — deliberately a subpath of `/admin/rules/` so the
+  existing `StartsWithSegments("/admin/rules")` Basic-Auth middleware covers it with no new
+  config. Shows *all* transactions (not just uncategorized) with pagination (50/page) and
+  filters (free text, category incl. "none", account, booking-date range, amount range) via new
+  `GET /admin/rules/api/transactions/list` — same in-memory-filter-then-paginate pattern as
+  `/rules/preview`/`/uncategorized`, no new SQL query. New `GET /admin/rules/api/accounts` feeds
+  the account filter. Category is editable inline per row via the same
+  `PUT /admin/rules/api/transactions/{id}/category` from v0.21.0. The two admin pages now link
+  to each other. Shared CSS was extracted from `index.html`'s inline `<style>` into
+  `wwwroot/admin/rules/admin.css`, referenced by both pages, to avoid duplicating it.
 - Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
   — check there first before guessing at API behavior, but confirm against a real request
   when in doubt: the docs have been wrong before (see above).

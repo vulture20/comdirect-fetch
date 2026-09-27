@@ -4,6 +4,20 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.22.0 – Neue Admin-Seite "Alle Umsätze"
+
+Neue Seite `/admin/rules/transactions/` neben der bestehenden Kategorien/Regeln-Seite: zeigt
+**alle** Umsätze (nicht nur unkategorisierte) mit Datum, Buchungstext/Umsatztyp, Empfänger,
+Betrag, Konto und Kategorie. Filter/Suche nach Freitext (Buchungstext/Empfänger), Kategorie
+(inkl. "Ohne Kategorie"), Konto, Buchungsdatum-Zeitraum und Betrags-Min/Max, mit Pagination
+(50 Zeilen/Seite). Kategorie ist pro Zeile direkt änderbar (nutzt den bestehenden
+`PUT /admin/rules/api/transactions/{id}/category`-Endpunkt aus 0.21.0). Neue Endpunkte:
+`GET /admin/rules/api/transactions/list` (paginiert, filterbar, In-Memory-Filterung wie bei
+`/rules/preview`/`/uncategorized`) und `GET /admin/rules/api/accounts` (für den Konto-Filter).
+Beide Seiten verlinken jetzt gegenseitig aufeinander. Das bisher inline in `index.html`
+eingebettete CSS wurde nach `wwwroot/admin/rules/admin.css` ausgelagert, damit beide Seiten
+gleich aussehen, ohne Duplizieren.
+
 ## 0.21.0 – Einzelne unkategorisierte Umsätze direkt zuordnen
 
 Nicht jeder unkategorisierte Einzelposten rechtfertigt eine neue, dauerhafte Regel. Die

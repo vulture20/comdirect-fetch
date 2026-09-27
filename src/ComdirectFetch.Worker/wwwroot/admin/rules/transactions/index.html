@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>comdirect-fetch: Alle Umsätze</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../admin.css">
+</head>
+<body>
+
+<h1>comdirect-fetch: Alle Umsätze</h1>
+<p class="subtitle">Übersicht über alle erfassten Umsätze mit Kategorie, Konto, Suche und Pagination.</p>
+<p class="nav-link"><a href="/admin/rules/">→ Kategorien &amp; Regeln</a></p>
+
+<div id="globalMsg" class="msg"></div>
+
+<div class="panel">
+  <div class="toolbar">
+    <div>
+      <label>Suche (Buchungstext/Empfänger)</label>
+      <input type="text" id="fQuery" placeholder="z. B. REWE" onkeydown="if(event.key==='Enter') search(1)">
+    </div>
+    <div>
+      <label>Kategorie</label>
+      <select id="fCategory"><option value="">Alle</option><option value="none">Ohne Kategorie</option></select>
+    </div>
+    <div>
+      <label>Konto</label>
+      <select id="fAccount"><option value="">Alle</option></select>
+    </div>
+    <div>
+      <label>Datum von</label>
+      <input type="date" id="fDateFrom">
+    </div>
+    <div>
+      <label>Datum bis</label>
+      <input type="date" id="fDateTo">
+    </div>
+    <div>
+      <label>Betrag von</label>
+      <input type="number" step="0.01" id="fAmountMin" placeholder="z. B. -100">
+    </div>
+    <div>
+      <label>Betrag bis</label>
+      <input type="number" step="0.01" id="fAmountMax" placeholder="z. B. 100">
+    </div>
+    <div style="flex:0">
+      <button class="primary" onclick="search(1)">Suchen</button>
+    </div>
+  </div>
+  <div id="txResult"></div>
+</div>
+
+<script>
+const API = '/admin/rules/api';
+let categories = [];
+let accounts = [];
+let currentPage = 1;
+const pageSize = 50;
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = 'msg ' + type;
+  el.style.display = 'block';
+}
+
+async function api(method, path, body) {
+  const res = await fetch(API + path, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    throw new Error((data && data.message) || ('HTTP ' + res.status));
+  }
+  return data;
+}
+
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function categoryOptionsHtml(selectedId) {
+  return categories.map(c => `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
+}
+
+async function loadFilters() {
+  const [cats, accs] = await Promise.all([api('GET', '/categories'), api('GET', '/accounts')]);
+  categories = cats;
+  accounts = accs;
+  const catSelect = document.getElementById('fCategory');
+  catSelect.innerHTML = '<option value="">Alle</option><option value="none">Ohne Kategorie</option>' +
+    cats.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  const accSelect = document.getElementById('fAccount');
+  accSelect.innerHTML = '<option value="">Alle</option>' +
+    accs.map(a => `<option value="${a.id}">${escapeHtml(a.displayName)}</option>`).join('');
+}
+
+function buildQuery(page) {
+  const params = new URLSearchParams();
+  const q = document.getElementById('fQuery').value.trim();
+  const category = document.getElementById('fCategory').value;
+  const accountId = document.getElementById('fAccount').value;
+  const dateFrom = document.getElementById('fDateFrom').value;
+  const dateTo = document.getElementById('fDateTo').value;
+  const amountMin = document.getElementById('fAmountMin').value;
+  const amountMax = document.getElementById('fAmountMax').value;
+
+  if (q) params.set('q', q);
+  if (category === 'none') params.set('uncategorized', 'true');
+  else if (category) params.set('categoryId', category);
+  if (accountId) params.set('accountId', accountId);
+  if (dateFrom) params.set('dateFrom', dateFrom);
+  if (dateTo) params.set('dateTo', dateTo);
+  if (amountMin) params.set('amountMin', amountMin);
+  if (amountMax) params.set('amountMax', amountMax);
+  params.set('page', page);
+  params.set('pageSize', pageSize);
+  return params.toString();
+}
+
+function transactionRowHtml(t) {
+  return `
+    <tr data-tx-id="${t.id}">
+      <td>${escapeHtml(t.bookingDate)}</td>
+      <td>${escapeHtml(t.bookingText || t.transactionType || '')}</td>
+      <td>${escapeHtml(t.counterpartyName || '')}</td>
+      <td>${t.amount} ${escapeHtml(t.currency)}</td>
+      <td>${escapeHtml(t.accountName || ('#' + t.accountId))}</td>
+      <td><select id="txCat-${t.id}">${categoryOptionsHtml(t.categoryId)}</select></td>
+      <td>${t.manuallyCategorized ? '<span class="muted">manuell</span>' : ''}</td>
+      <td><button class="primary" onclick="assignCategory(${t.id})">Zuordnen</button></td>
+    </tr>
+  `;
+}
+
+async function assignCategory(id) {
+  const select = document.getElementById('txCat-' + id);
+  const categoryId = Number(select.value);
+  const globalMsg = document.getElementById('globalMsg');
+  try {
+    await api('PUT', '/transactions/' + id + '/category', { categoryId });
+    showMsg(globalMsg, 'Kategorie zugeordnet.', 'ok');
+    await search(currentPage);
+  } catch (e) {
+    showMsg(globalMsg, 'Fehler: ' + e.message, 'error');
+  }
+}
+
+async function search(page) {
+  currentPage = page;
+  const resultEl = document.getElementById('txResult');
+  resultEl.innerHTML = '<p class="muted">Lädt...</p>';
+  try {
+    const result = await api('GET', '/transactions/list?' + buildQuery(page));
+    if (result.totalCount === 0) {
+      resultEl.innerHTML = '<p class="muted">Keine Treffer.</p>';
+      return;
+    }
+    const totalPages = Math.max(1, Math.ceil(result.totalCount / result.pageSize));
+    const rows = result.transactions.map(transactionRowHtml).join('');
+    resultEl.innerHTML = `
+      <table><thead><tr><th>Datum</th><th>Buchungstext/Umsatztyp</th><th>Empfänger/Auftraggeber</th><th>Betrag</th><th>Konto</th><th style="width:200px">Kategorie</th><th style="width:80px"></th><th style="width:100px"></th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="pagination">
+        <button onclick="search(${result.page - 1})" ${result.page <= 1 ? 'disabled' : ''}>« Zurück</button>
+        <span>Seite ${result.page} von ${totalPages} (${result.totalCount} Treffer)</span>
+        <button onclick="search(${result.page + 1})" ${result.page >= totalPages ? 'disabled' : ''}>Weiter »</button>
+      </div>
+    `;
+  } catch (e) {
+    resultEl.innerHTML = `<p class="msg error" style="display:block">Fehler: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+(async function init() {
+  await loadFilters();
+  await search(1);
+})();
+</script>
+
+</body>
+</html>
