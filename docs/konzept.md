@@ -212,6 +212,21 @@ Diese Pflege übernimmt Claude Code während der Entwicklung selbstständig als 
 - **Priorisierung der Auswertungen** (Abschnitt 6): nach Datenabhängigkeit/Aufwand in vier Phasen vorgeschlagen; Bestätigung oder Anpassung durch den Nutzer steht noch aus.
 - **Kategorisierung von Buchungstexten** (Abschnitt 6): Mechanismus ist umgesetzt und mit echten Umsatzdaten verifiziert (siehe `CHANGELOG.md` 0.8.0, `db/migrations/0004_extend_categorization_rules.sql`) – 12 Start-Regeln (0002) plus 14 weitere Regeln/7 neue Kategorien anhand der ersten 16 realen Kontoumsätze. Die zuvor offene Frage nach dem genauen Vorgehen für eine erneute Kategorisierung des Bestands bei Regeländerungen ist ebenfalls geklärt: `POST /debug/recategorize` / `comdirectctl.sh recategorize` wenden den aktuellen Regelsatz erneut auf alle nicht manuell kategorisierten Umsätze an. Erledigt für den aktuellen Datenstand; weitere Muster werden iterativ ergänzt, sobald neue, bisher unbekannte Buchungstexte auftauchen.
 - **Umfang**: Konzept geht von einem einzelnen comdirect-Zugang aus (ein Nutzer, aber ggf. mehrere Konten/Depots innerhalb dieses Zugangs), keine Mandantenfähigkeit für mehrere getrennte comdirect-Zugänge.
+- **Nicht alle Konten/Depots des Nutzers werden erfasst** (v0.23.1): der Nutzer hat mindestens 2
+  weitere Depots samt zugehöriger Konten (IBANs `DE00123456780000000003`/`DE00123456780000000004`),
+  die comdirect-fetch nicht kennt. Live bestätigt, kein Bug im Code: `GET /banking/clients/user/
+  v2/accounts/balances` liefert unter der aktuellen Session-Autorisierung nur 3 Konten, `GET
+  /brokerage/clients/{userId}/v3/depots` nur 1 Depot – beide Endpunkte laut Swagger ohnehin ohne
+  Paging (liefern angeblich „all accounts“ in einem Rutsch), die zusätzlichen Konten/Depots fehlen
+  also bereits in der rohen API-Antwort, werden nicht etwa herausgefiltert. Wahrscheinlichste
+  Ursache: die ursprüngliche OAuth-/TAN-Autorisierung (`cd_secondary`-Token-Tausch, Abschnitt 3)
+  hat den Zugriff auf eine Teilmenge der Konten/Depots beschränkt (typisches Muster bei
+  PSD2/XS2A-artigen Consent-Flows – Zustimmung gilt ggf. nur für die zum Zeitpunkt der TAN-Freigabe
+  ausgewählten Konten). Noch nicht verifiziert, ob eine erneute TAN-Freigabe (`POST /auth/start`)
+  mit erweiterter Kontoauswahl das behebt – dafür ist eine echte, vom Nutzer initiierte
+  TAN-Bestätigung nötig (Sicherheitsregel: kein automatisches/wiederholtes `/auth/start`). Zur
+  Diagnose loggen `BalanceFetchService`/`PortfolioFetchService` jetzt bei jedem Abruf die Anzahl
+  und IBANs/Depot-IDs der tatsächlich gelieferten Konten/Depots.
 - **MariaDB-Bereitstellung**: Datenbank samt Zugangsdaten wird vom Nutzer extern zur Verfügung gestellt; Betrieb/Deployment der Datenbank ist nicht Teil dieses Projekts.
 - **Eindeutigkeit der Kontoumsatz-Referenz** (Abschnitt 5, GitHub-Issue #11): Weder Swagger noch
   die deutsche PDF-Doku qualifizieren „unique reference code of the transaction“/„Eine eindeutige

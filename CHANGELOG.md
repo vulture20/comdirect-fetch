@@ -4,6 +4,14 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.23.1 – Logging der Anzahl abgerufener Konten/Depots
+
+`BalanceFetchService`/`PortfolioFetchService` loggen jetzt bei jedem Abruf, wie viele Konten/
+Depots die comdirect-API zurückliefert (inkl. IBANs/Depot-Anzeige-IDs) – Diagnosehilfe, nachdem
+sich zeigte, dass die API unter der aktuellen Autorisierung nur einen Teil der beim Nutzer
+tatsächlich vorhandenen Konten/Depots liefert (live bestätigt: 3 von mindestens 5 Konten, 1 von
+mindestens 3 Depots). Keine funktionale Änderung, reine Beobachtbarkeit.
+
 ## 0.23.0 – Depot-Performance bereinigt um externe Ein-/Auszahlungen (Issue #12)
 
 Löst GitHub-Issue #12 (Folge-Issue zu #2): Depot↔Verrechnungskonto-Verknüpfung erfasst
