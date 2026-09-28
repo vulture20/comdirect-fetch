@@ -4,6 +4,14 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 1.0.1 – IBAN-Logging maskiert (Datenschutz-Review)
+
+`BalanceFetchService` loggte seit v0.23.1 volle IBANs bei jedem Saldenabruf. Neue, reine
+`ComdirectFetch.Domain.IbanMasking.Mask` (unit-getestet) zeigt jetzt nur noch Länderkennung +
+Prüfziffer sowie die letzten 4 Stellen (z. B. `DE00...0099`) – reicht, um Konten in Logzeilen
+auseinanderzuhalten, ohne die volle Kontonummer in potenziell anders aufbewahrten/zugänglichen
+Logdateien preiszugeben.
+
 ## 1.0.0 – Auth-Ausweitung + Container läuft nicht mehr als root (Breaking Change)
 
 Reaktion auf einen Security-Review-Fund: `/auth/*`, `/debug/*` und `POST /admin/credentials`

@@ -823,5 +823,57 @@ DB-Werten, unescapte Interpolationen ausschließlich Zahlen/IDs oder über `text
 AES-256-GCM-Implementierung (`SecretEncryption`, frischer Zufalls-Nonce pro Verschlüsselung),
 Klartext-Logging von Secrets (keines gefunden), `comdirectctl.sh` (kein `eval`, JSON sauber über
 `jq --arg`), Timing-sicherer Passwortvergleich (`CryptographicOperations.FixedTimeEquals`),
-`.env`/`secrets/` nie committed. Geringfügig, nicht behoben: volle IBANs werden seit v0.23.1 bei
-jedem Saldenabruf geloggt (keine Zugangsdaten, aber direkt identifizierende Finanzdaten in Logs).
+`.env`/`secrets/` nie committed. Geringfügig, seit v1.0.1 behoben (siehe Abschnitt 15): volle
+IBANs wurden seit v0.23.1 bei jedem Saldenabruf geloggt (keine Zugangsdaten, aber direkt
+identifizierende Finanzdaten in Logs).
+
+## 15. Datenschutz-Review (umgesetzt in 1.0.1)
+
+Auf Nutzeranfrage manuell durchgeführter Datenschutz-Review, ergänzend zum Security-Review in
+Abschnitt 14 – Fokus: welche personenbezogenen Daten (auch von Dritten, nicht nur der
+Nutzer:in selbst) verarbeitet, gespeichert, geloggt oder an Dritte übertragen werden.
+
+### Zentraler Befund: Drittanbieter-Daten in `transactions`, unbegrenzt aufbewahrt
+
+`transactions.counterparty_name`/`counterparty_iban` sowie oft auch `booking_text` enthalten
+personenbezogene Daten der Gegenseite einer Buchung (Vermieter, Zahlungsempfänger, Auftraggeber) –
+also Daten Dritter, nicht nur der Nutzer:in. Funktional begründet (Erkennung interner
+Umbuchungen, `RuleMatchField.CounterpartyName`), keine willkürliche Übererfassung.
+`RetentionRepository` lässt `transactions` bewusst und dokumentiert unangetastet ("das
+Finanzbuch") – keine Konsolidierung, keine Löschung, unbegrenzte Aufbewahrung, kein Mechanismus,
+um Daten zu einem einzelnen Umsatz/einer einzelnen Gegenseite gezielt zu löschen. Für ein privates,
+selbst gehostetes Tool über die eigenen Finanzen kommt vermutlich die Haushaltsausnahme (Art. 2
+Abs. 2 lit. c DSGVO) in Betracht – das ist eine rechtliche Einschätzung, die dieses Dokument nicht
+abschließend trifft, nur die Fakten dazu festhält. Bewusst nicht umgesetzt (kein Nutzerauftrag):
+eine gezielte Lösch-Möglichkeit für einzelne Umsätze/Gegenseiten.
+
+### Behoben: IBAN-Logging maskiert (v1.0.1)
+
+`BalanceFetchService` loggte seit v0.23.1 volle IBANs bei jedem Saldenabruf. Logdateien können
+andere Aufbewahrungs-/Zugriffsregeln haben als die DB (z. B. zentrales Log-Aggregations-System auf
+dem Host), daher potenziell breitere Exposition als nötig. Neue, reine
+`ComdirectFetch.Domain.IbanMasking.Mask` (unit-getestet, gleiches Muster wie `TextDecoding`/
+`SecretEncryption`) zeigt jetzt nur Länderkennung + Prüfziffer sowie die letzten 4 Stellen
+(`DE00...0099`) – reicht zur Unterscheidung von Konten in Logzeilen, ohne die volle Kontonummer
+preiszugeben. Der Fallback auf `AccountId` (falls keine IBAN vorliegt) bleibt unmaskiert – das ist
+die interne comdirect-UUID des Kontos, keine Kontonummer, und war nicht Gegenstand der Anfrage.
+
+### Weitere Befunde (keine Code-Änderung, nur festgehalten)
+
+- **Rohe comdirect-Fehlertexte in `sync_log.error_message`**: `HttpResponseExtensions.
+  EnsureSuccessWithBodyAsync` hängt den kompletten Response-Body einer fehlgeschlagenen Anfrage an
+  die Exception-Message – landet dauerhaft in `sync_log`. Kein konkreter Fund von personenbezogenen
+  Daten darin, aber ein Kanal, über den ungeplant mehr als nötig in dauerhaft gespeicherten Logs
+  landen könnte.
+- **Finanzdaten unverschlüsselt in der DB**: Nur Session-Token und Zugangsdaten werden
+  AES-256-GCM-verschlüsselt (Abschnitt 9/10). Kontostände, Umsätze, Depotpositionen liegen im
+  Klartext in MariaDB – Schutz hängt vollständig von der Absicherung der extern bereitgestellten
+  DB ab, bewusst keine Anwendungs-seitige Verschlüsselung der eigentlichen Finanzdaten.
+- **Grafana**: Dashboards zeigen Beträge, Kategorien und Gegenseiten-Namen im Klartext in der
+  bereits existierenden, gemeinsam genutzten Grafana-Instanz ("BugZone", Abschnitt 2). Wer dort
+  Zugriff auf diese vier Dashboards hat, liegt außerhalb der Kontrolle dieses Codes.
+- **Positiv**: Benachrichtigungen (E-Mail/Webhook, `NotificationService`) enthalten nur eine
+  generische "TAN-Freigabe erforderlich"-Nachricht plus technischem Fehlertext – keine Beträge,
+  Kontonummern oder Umsatzdetails werden an externe Kanäle übertragen.
+- **Positiv**: keine Analytics/Tracking, keine sonstige Datenübertragung an Dritte außer der
+  comdirect-API selbst und den vom Nutzer konfigurierten Benachrichtigungskanälen.

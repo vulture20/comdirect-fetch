@@ -49,7 +49,8 @@ public sealed class BalanceFetchService(
             var entries = await bankingClient.GetBalancesAsync(authCoordinator.CurrentToken, cancellationToken);
             logger.LogInformation(
                 "Saldenabruf lieferte {Count} Konto(s): {Ibans}",
-                entries.Count, string.Join(", ", entries.Select(e => e.Account.Iban ?? e.Account.AccountId)));
+                entries.Count,
+                string.Join(", ", entries.Select(e => e.Account.Iban is { } iban ? IbanMasking.Mask(iban) : e.Account.AccountId)));
             var now = DateTimeOffset.UtcNow;
 
             foreach (var entry in entries)

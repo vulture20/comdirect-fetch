@@ -340,6 +340,19 @@ Do this as part of the change itself, not only when the user asks for it.
   file ownership through exactly) plus `chown 1654:1654` on all three host files — required
   operator action before upgrading, permissions stay 600/400, only the owner changes from root to
   the dedicated app user (strictly tighter, not looser, than before).
+- **Privacy review (v1.0.1, `docs/konzept.md` §15)**: a manual data-protection review (separate
+  from the security review above) found `transactions.counterparty_name`/`counterparty_iban` hold
+  personal data of *third parties* (landlords, payees), retained forever by design
+  (`RetentionRepository` never touches `transactions` — no deletion tooling for a single
+  transaction/counterparty exists). Fixed: the full-IBAN logging added in v0.23.1
+  (`BalanceFetchService`) is now masked via `ComdirectFetch.Domain.IbanMasking.Mask`
+  (unit-tested, same pattern as `TextDecoding`/`SecretEncryption`) — shows country code + check
+  digits + last 4 characters (`DE00...0099`) instead of the full number; the `AccountId` fallback
+  (used when no IBAN is present) stays unmasked since it's comdirect's internal account UUID, not
+  an account number, and wasn't the ask. Other findings (raw comdirect error bodies persisted in
+  `sync_log.error_message`, financial data stored unencrypted in the DB, Grafana rendering
+  counterparty names in cleartext on the shared instance) were noted but left unchanged — no
+  concrete issue found, or explicitly out of scope for this codebase.
 - Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
   — check there first before guessing at API behavior, but confirm against a real request
   when in doubt: the docs have been wrong before (see above).
