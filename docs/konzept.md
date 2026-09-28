@@ -877,3 +877,48 @@ die interne comdirect-UUID des Kontos, keine Kontonummer, und war nicht Gegensta
   Kontonummern oder Umsatzdetails werden an externe Kanäle übertragen.
 - **Positiv**: keine Analytics/Tracking, keine sonstige Datenübertragung an Dritte außer der
   comdirect-API selbst und den vom Nutzer konfigurierten Benachrichtigungskanälen.
+
+## 16. Öffentliche Veröffentlichung (Repo + Docker-Image)
+
+Auf Nutzerwunsch: GitHub-Repo und Docker-Image (`ghcr.io/vulture20/comdirect-fetch`) öffentlich
+gemacht. Vorbereitend zwei Schritte:
+
+### Lizenz
+
+`LICENSE` (GNU Affero General Public License v3.0-or-later), Copyright (C) 2026 Thorsten
+Schröpel – bewusst AGPL statt einer permissiveren Lizenz (MIT/Apache), da sie bei
+netzwerkbasierter Nutzung (nicht nur bei Weitergabe) zur Offenlegung des Quellcodes einer
+veränderten Version verpflichtet. Offizieller Lizenztext über die GitHub-Licenses-API bezogen
+(`gh api /licenses/agpl-3.0`), nicht aus dem Gedächtnis rekonstruiert. `README.md` verweist im
+neuen Abschnitt „Lizenz" darauf.
+
+### Bereinigung der Git-Historie
+
+Vor der Veröffentlichung wurde die komplette Historie (36 Commits, 18 Tags) auf personenbezogene
+Daten geprüft, die im Rahmen dieser Session versehentlich in Dokumentation/Tests committet
+wurden (Datenschutz-Review, Abschnitt 15): zwei echte IBANs zusätzlicher Depot-Konten in
+`docs/konzept.md` §9, eine echte IBAN als Test-Fixture in `IbanMaskingTests.cs`, sowie der
+volle Name des Nutzers und der Nachname eines Dritten (Vermieter) in `CHANGELOG.md` und einer
+Commit-Message (v0.17.0). Bereinigt mit `git filter-repo --replace-text ... --replace-message
+...` (Debian-Paket `git-filter-repo`) gegen eine Ersetzungsliste – Dateiinhalte UND
+Commit-/Tag-Nachrichten, beide nötig (`--replace-text` allein deckt Commit-Nachrichten nicht ab,
+live bestätigt). Alle betroffenen Werte durch erkennbar synthetische Platzhalter ersetzt
+(`DE00123456780000000099` etc., „Max Mustermann", „Mustervermieter"), Historie danach
+vollständig gegengeprüft (keine Treffer mehr, auch nicht über die GitHub-API auf dem bereits
+gepushten Ergebnis). Anschließend zwingend `git push --force` für `main` und alle Tags
+erforderlich – bestehende lokale Klone (inkl. des eigenen Arbeitsverzeichnisses) mussten danach
+per `git fetch`+`git reset --hard`/`git fetch --force --tags` auf den neuen Stand gebracht
+werden, da sich sämtliche Commit-Hashes ab dem betroffenen Commit (v0.17.0) geändert haben.
+
+### Offene Punkte
+
+- **Sichtbarkeit des Docker-Images**: konnte nicht automatisiert geprüft/umgestellt werden – der
+  verfügbare `gh`-Token hat nicht den nötigen `packages`-Scope
+  (`GET /user/packages/container/...` liefert 403). Muss manuell über die GitHub-Weboberfläche
+  (Repo → Packages → comdirect-fetch → Package settings → Change visibility) geprüft/umgestellt
+  werden.
+- Diese Konzept-Datei sowie `CLAUDE.md`/`CHANGELOG.md` enthalten weiterhin ausführliche
+  Beschreibungen der eigenen Systemlandschaft (Host-Setup, Grafana-Org-Name "BugZone",
+  Kategorisierungsmuster echter, aber inzwischen anonymisierter Buchungen) – bewusst so belassen,
+  da das für Dritte, die dieses Projekt als Vorlage für den eigenen Einsatz nutzen wollen,
+  nützlicher Kontext ist und keine personenbezogenen Daten mehr enthält.
