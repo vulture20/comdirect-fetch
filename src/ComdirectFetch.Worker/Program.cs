@@ -88,21 +88,29 @@ using (var scope = app.Services.CreateScope())
     await scope.ServiceProvider.GetRequiredService<ComdirectAuthCoordinator>().TryRestoreAsync();
 }
 
-// GitHub-Issue #13, KONZEPT.md Abschnitt 12: /admin/rules/* (Web-Oberfläche + zugehörige API für
-// Kategorien/Regeln) ist bewusst strenger geschützt als die übrigen, unauthentifizierten
-// /debug/*-/auth/*-Endpunkte (und auch /admin/credentials, Issue #10 B - anderer Pfad, andere
-// Vertrauensebene), da hier dauerhafte Konfiguration geändert wird, nicht nur eine Aktion
-// angestoßen. Ohne gesetztes Admin__Password bleibt /admin/rules/* komplett deaktiviert (503)
-// statt ungeschützt erreichbar.
+// Security-Review-Fund: /debug/*, /auth/* und /admin/credentials galten bislang als "eh nur
+// host-lokal erreichbar" und blieben deshalb unauthentifiziert - live widerlegt, docker-compose.yml
+// bindet den Port auf 0.0.0.0, die Firewall des geteilten Homelab-Hosts lässt das durch. Statt das
+// Binding zu ändern (Nutzerentscheidung), wird die bestehende Admin__Password-Prüfung von
+// /admin/rules/* jetzt auf all diese Endpunkte ausgeweitet - dasselbe, gemeinsame Passwort statt
+// eines zweiten Secrets. /health bleibt bewusst offen (nur Status/Version, keine sensiblen Daten,
+// damit einfache Erreichbarkeits-/Monitoring-Checks ohne Zugangsdaten funktionieren). Wie zuvor:
+// ohne gesetztes Admin__Password sind diese Endpunkte komplett deaktiviert (503), nicht offen.
 app.Use(async (context, next) =>
 {
-    if (context.Request.Path.StartsWithSegments("/admin/rules"))
+    var path = context.Request.Path;
+    var requiresAdminAuth = path.StartsWithSegments("/admin/rules")
+        || path.StartsWithSegments("/admin/credentials")
+        || path.StartsWithSegments("/auth")
+        || path.StartsWithSegments("/debug");
+
+    if (requiresAdminAuth)
     {
         var adminPassword = context.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<AdminOptions>>().Value.Password;
         if (string.IsNullOrEmpty(adminPassword))
         {
             context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-            await context.Response.WriteAsJsonAsync(new { Message = "Admin__Password nicht konfiguriert - /admin/rules/* ist deaktiviert." });
+            await context.Response.WriteAsJsonAsync(new { Message = "Admin__Password nicht konfiguriert - dieser Endpunkt ist deaktiviert." });
             return;
         }
 

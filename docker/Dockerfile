@@ -23,4 +23,12 @@ COPY --from=build /app .
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
 
+# Security-Review-Fund: lief bisher als root (kein USER, also Default des Basisimages). Das
+# aspnet-Basisimage bringt bereits einen dedizierten, unprivilegierten Nutzer mit (live geprüft:
+# "app", UID/GID 1654, als $APP_UID exportiert) - Port 8080 braucht ohnehin keine Root-Rechte
+# (nur Ports < 1024 tun das). Die kopierten Dateien unter /app bleiben root:root, sind aber
+# world-readable (COPY-Standardrechte), reichen also zum Lesen/Ausführen; geschrieben wird zur
+# Laufzeit nirgends unter /app (Migrationen sind eingebettete Ressourcen, keine Dateien).
+USER $APP_UID
+
 ENTRYPOINT ["dotnet", "ComdirectFetch.Worker.dll"]

@@ -3,17 +3,27 @@
 # ursprünglichen Zielhost, daher werden Datenquelle + Dashboards dort per Grafana-API
 # eingerichtet statt über einen eigenen Grafana-Container hier (siehe README.md).
 #
-# KONZEPT.md Abschnitt 10 A: Client-ID/Client-Secret werden als Docker-Compose-Secrets (Dateien
-# statt Env-Var) bereitgestellt, um sie aus docker inspect/exec/-Umgebungsvariablen-Dumps
-# herauszuhalten. Vor dem ersten "docker compose up" müssen ../secrets/Comdirect__ClientId und
-# ../secrets/Comdirect__ClientSecret existieren (siehe README.md/.env.example) - Dateirechte 600,
-# das Verzeichnis ist gitignored.
-
-secrets:
-  Comdirect__ClientId:
-    file: ../secrets/Comdirect__ClientId
-  Comdirect__ClientSecret:
-    file: ../secrets/Comdirect__ClientSecret
+# KONZEPT.md Abschnitt 10 A/B: ClientId/ClientSecret/credential_key werden als schreibgeschützte
+# Bind-Mounts statt als Docker-Compose-"secrets:" bereitgestellt - das hält sie weiterhin aus
+# docker inspect/-Umgebungsvariablen-Dumps heraus (das war der eigentliche Zweck, siehe unten),
+# ist aber die einzige Mounting-Art, bei der die Host-Dateirechte 1:1 im Container ankommen.
+#
+# Security-Review-Fund: der Container läuft seit v1.0.0 nicht mehr als root (siehe
+# docker/Dockerfile, USER $APP_UID). Compose-"secrets:" unterstützen zwar uid/gid/mode je
+# Secret, aber NUR im Swarm-Modus - unter normalem "docker compose up" werden sie live bestätigt
+# ignoriert ("secrets `uid`, `gid` and `mode` are not supported, they will be ignored", Compose
+# v5.5.0) und die Dateien landen immer root:root mit den Rechten der Host-Quelldatei im Container -
+# für den jetzt unprivilegierten Prozess unlesbar, hat den Dienst beim ersten Testlauf sofort mit
+# "Access to the path ... is denied" abstürzen lassen. Ein Bind-Mount dagegen übernimmt Owner/Rechte
+# der Host-Datei exakt, deshalb müssen alle drei Dateien dem App-Nutzer gehören:
+#   chown 1654:1654 secrets/Comdirect__ClientId secrets/Comdirect__ClientSecret \
+#                    /etc/comdirect-fetch/credential.key
+# (1654 = UID des "app"-Nutzers im mcr.microsoft.com/dotnet/aspnet:10.0-Basisimage, live geprüft:
+# docker run --rm mcr.microsoft.com/dotnet/aspnet:10.0 sh -c 'id app'. Bei einem Wechsel des
+# Basisimage-Tags mit anderer App-UID muss dieser Wert zusammen mit USER $APP_UID im Dockerfile
+# und den drei chown-Zielen angepasst werden.) Rechte bleiben dabei unverändert eng (600/400),
+# nur der Owner wechselt von root auf den dedizierten App-Nutzer - strenger als vorher, nicht
+# lockerer, da vorher jeder root-Prozess auf dem Host mitlesen konnte.
 
 services:
   fetch:
@@ -22,14 +32,9 @@ services:
       dockerfile: docker/Dockerfile
     env_file:
       - ../.env
-    secrets:
-      - Comdirect__ClientId
-      - Comdirect__ClientSecret
     volumes:
-      # KONZEPT.md Abschnitt 10 B: dedizierter, dateibasierter Schlüssel zur Verschlüsselung von
-      # Zugangsnummer/PIN in credential_store - bewusst außerhalb von .env und außerhalb dieses
-      # Projektverzeichnisses (chmod 400 auf dem Host). Fehlt die Datei, bleibt der
-      # Bootstrap-Mechanismus inaktiv (siehe CredentialProvider), kein Zwang zur Migration.
+      - ../secrets/Comdirect__ClientId:/run/secrets/Comdirect__ClientId:ro
+      - ../secrets/Comdirect__ClientSecret:/run/secrets/Comdirect__ClientSecret:ro
       - /etc/comdirect-fetch/credential.key:/run/secrets/credential_key:ro
     restart: unless-stopped
     ports:
