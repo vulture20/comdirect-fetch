@@ -96,6 +96,15 @@ Five projects under `src/`, referencing each other in one direction only
   the insert fails with "Data truncated for column". Convert with `.ToString()` in the
   parameter object instead (see `SyncLogRepository`). Enum *columns* read back into enum
   *properties* work fine without any of this — it's a parameter-binding-only gotcha.
+  **Dapper + positional records**: never `QueryAsync<T>` into a positional `record` whose
+  constructor parameter type doesn't exactly match the underlying CLR type MySqlConnector
+  returns for that column (e.g. a `DateTime` column into a `record`'s `DateTimeOffset`
+  parameter) — Dapper materializes records via their primary constructor and requires an exact
+  type match there, unlike the property-setter-based materialization used for plain classes,
+  which already tolerates `DateTime`→`DateTimeOffset` everywhere else in this codebase. Failed
+  live with "A parameterless default constructor or one matching signature ... is required" for
+  `PortfolioValuationPoint` (Issue #12) until changed from a `record` to a class with settable
+  properties (see `PortfolioSnapshotRepository`).
 - **`ComdirectFetch.Worker`** — the entry point (`Program.cs`, ASP.NET Core minimal hosting,
   everything registered as singletons since repositories are stateless). Background
   services: `TokenRefreshBackgroundService` (keeps the session alive via refresh, runs far
@@ -285,6 +294,33 @@ Do this as part of the change itself, not only when the user asks for it.
   `PUT /admin/rules/api/transactions/{id}/category` from v0.21.0. The two admin pages now link
   to each other. Shared CSS was extracted from `index.html`'s inline `<style>` into
   `wwwroot/admin/rules/admin.css`, referenced by both pages, to avoid duplicating it.
+- Depot-performance cleaned of external deposits/withdrawals (v0.23.0, `docs/konzept.md` §13,
+  Issue #12, follow-up to #2): `defaultSettlementAccountId`/`settlementAccountIds` from the
+  Depot API are now captured (`DepotEntry` in `BrokerageModels.cs`) and resolved against
+  `accounts.comdirect_account_id` — live-verified to be the same UUID format, not a plain account
+  number as the Swagger wording suggested; also live-confirmed the checking account (Girokonto)
+  is itself registered as a non-default settlement account, since savings-plan buys settle
+  directly against it. New n:m table `portfolio_settlement_accounts`
+  (`db/migrations/0013_...sql`). `ComdirectFetch.Domain.DepotCashflowClassifier`/
+  `DepotPerformanceCalculator` (pure, unit-tested like `CategorizationLogic`) classify each
+  transaction on a linked account **by `transaction_type` alone** (`Securities` → capital
+  in/out, `Interest / Dividends` → investment return, anything else → ignored) — deliberately
+  not by account, because a shared account like the Girokonto also carries ordinary spending; an
+  earlier account-based version live-miscounted everyday purchases as capital invested (8540.41€
+  vs. the correct 898.15€, caught by cross-checking against a direct SQL sum before release).
+  Two methods computed fresh from full history on every new `portfolio_snapshots` row and
+  persisted there (`db/migrations/0014_...sql`: `net_invested_capital`, `dividends_received`,
+  `time_weighted_return_pct`, all `NULL` pre-v0.23.0 or without a resolvable link — no backfill):
+  a simple net-invested-capital P&L, and a daily-chained Time-Weighted Return
+  (`DepotPerformanceCalculator.ConsolidateToDailyLastValue` + `CalculateTimeWeightedReturn`).
+  **Known limitation, found live, not guessable in advance**: net-invested-capital P&L/return-%
+  only account for capital movements since tracking began (v0.23.0) — for a depot with
+  substantial pre-existing value, this yields a wildly overstated return (live: ~4090% on a
+  real depot worth ~37k€ but only 898.15€ tracked-since-start). TWR is unaffected (it only
+  evaluates sub-period returns within the tracked window, no total-capital baseline needed).
+  The original `acquisition_value`-based panel (§9, v0.10.0) remains the only one covering full
+  purchase history. `grafana/dashboards/depot-performance.json` now shows both views, each
+  panel's description stating its own scope/limitation explicitly.
 - Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
   — check there first before guessing at API behavior, but confirm against a real request
   when in doubt: the docs have been wrong before (see above).

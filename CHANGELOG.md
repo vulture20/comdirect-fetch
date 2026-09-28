@@ -4,6 +4,27 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 0.23.0 – Depot-Performance bereinigt um externe Ein-/Auszahlungen (Issue #12)
+
+Löst GitHub-Issue #12 (Folge-Issue zu #2): Depot↔Verrechnungskonto-Verknüpfung erfasst
+(`defaultSettlementAccountId`/`settlementAccountIds`, live verifiziert im selben UUID-Format wie
+`accounts.comdirect_account_id`; neue Tabelle `portfolio_settlement_accounts`,
+`db/migrations/0013_...sql`). Zwei neue Kennzahlen je `portfolio_snapshots`-Eintrag
+(`db/migrations/0014_...sql`: `net_invested_capital`, `dividends_received`,
+`time_weighted_return_pct`), berechnet von der neuen, reinen `ComdirectFetch.Domain.
+DepotPerformanceCalculator`/`DepotCashflowClassifier` (unit-getestet): eine einfache
+Netto-Kapitaleinsatz-Methode und eine präzisere, tagesverkettete Time-Weighted Return.
+Klassifizierung bewusst nur anhand `transaction_type` (`Securities`/`Interest / Dividends`), nicht
+anhand des Kontos – ein erster, kontobasierter Ansatz zählte live fälschlich Alltagsausgaben auf
+dem (auch als Verrechnungskonto registrierten) Girokonto als Kapitaleinsatz mit (8540,41 € statt
+korrekt 898,15 €), gefunden und korrigiert vor dem Release. Zwei neue Dashboard-Panels-Reihen in
+`grafana/dashboards/depot-performance.json`, klar von der bestehenden, weiterhin unveränderten
+`acquisition_value`-basierten Ansicht abgegrenzt. **Wichtige Einschränkung**: Netto-Kapitaleinsatz-
+Rendite ist nur für Kapitalbewegungen seit Trackingbeginn aussagekräftig – bei einem bereits lange
+bestehenden Depot ergibt das aktuell eine stark überzeichnete Zahl (live: ca. 4090 %); die
+Time-Weighted-Return-Kennzahl ist davon nicht betroffen. Details siehe `docs/konzept.md`
+Abschnitt 13.
+
 ## 0.22.0 – Neue Admin-Seite "Alle Umsätze"
 
 Neue Seite `/admin/rules/transactions/` neben der bestehenden Kategorien/Regeln-Seite: zeigt

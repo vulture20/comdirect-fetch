@@ -11,6 +11,9 @@ public sealed class PortfolioFetchService(
     ComdirectBrokerageClient brokerageClient,
     PortfolioRepository portfolioRepository,
     PortfolioSnapshotRepository snapshotRepository,
+    PortfolioSettlementAccountRepository settlementAccountRepository,
+    AccountRepository accountRepository,
+    TransactionRepository transactionRepository,
     SyncLogRepository syncLogRepository,
     IOptions<FetchOptions> options,
     ILogger<PortfolioFetchService> logger) : BackgroundService
@@ -55,6 +58,8 @@ public sealed class PortfolioFetchService(
                 DisplayName = depot.DepotDisplayId ?? depot.DepotId,
             }, stoppingToken);
 
+            await UpdateSettlementAccountLinksAsync(portfolioId, depot, stoppingToken);
+
             var logId = await syncLogRepository.InsertAsync(new SyncLogEntry
             {
                 DataKind = SyncDataKind.Depotuebersicht,
@@ -96,6 +101,7 @@ public sealed class PortfolioFetchService(
                 });
 
                 await snapshotRepository.InsertPositionsAsync(domainPositions, stoppingToken);
+                await RecomputePerformanceAsync(portfolioId, snapshotId, stoppingToken);
                 await syncLogRepository.CompleteAsync(logId, SyncStatus.Erfolgreich, DateTimeOffset.UtcNow, cancellationToken: stoppingToken);
             }
             catch (Exception ex)
@@ -104,5 +110,65 @@ public sealed class PortfolioFetchService(
                 await syncLogRepository.CompleteAsync(logId, SyncStatus.Fehlgeschlagen, DateTimeOffset.UtcNow, ex.Message, stoppingToken);
             }
         }
+    }
+
+    /// <summary>
+    /// Löst defaultSettlementAccountId/settlementAccountIds (Issue #12) gegen die gespeicherten
+    /// Konten auf (Abgleich über accounts.comdirect_account_id) und ersetzt die Verknüpfungsliste.
+    /// Liefert comdirect kein bekanntes Konto (z. B. Format weicht ab oder Konto noch nicht
+    /// erfasst), bleibt das Depot ohne Verknüpfung - RecomputePerformanceAsync liefert dann
+    /// einfach keine Kennzahlen (null), kein Fehler.
+    /// </summary>
+    private async Task UpdateSettlementAccountLinksAsync(long portfolioId, DepotEntry depot, CancellationToken ct)
+    {
+        var accountsByComdirectId = (await accountRepository.GetAllAsync(ct))
+            .ToDictionary(a => a.ComdirectAccountId, a => a.Id);
+
+        var links = new List<(long AccountId, bool IsDefault)>();
+        if (depot.DefaultSettlementAccountId is not null &&
+            accountsByComdirectId.TryGetValue(depot.DefaultSettlementAccountId, out var defaultAccountId))
+        {
+            links.Add((defaultAccountId, true));
+        }
+
+        foreach (var otherId in depot.SettlementAccountIds ?? [])
+        {
+            if (accountsByComdirectId.TryGetValue(otherId, out var accountId) && links.All(l => l.AccountId != accountId))
+            {
+                links.Add((accountId, false));
+            }
+        }
+
+        await settlementAccountRepository.ReplaceForPortfolioAsync(portfolioId, links, ct);
+    }
+
+    /// <summary>
+    /// Berechnet Netto-Kapitaleinsatz, erhaltene Dividenden und die tagesverkettete Time-Weighted
+    /// Return (Issue #12, ComdirectFetch.Domain.DepotPerformanceCalculator) neu aus der kompletten
+    /// Historie und trägt sie am gerade eingefügten Snapshot nach. Bewusst jedes Mal komplett neu
+    /// statt inkrementell fortgeschrieben - bei der aktuellen Datenmenge (Snapshots/Umsätze im
+    /// niedrigen drei- bis vierstelligen Bereich) vernachlässigbar teuer und deutlich weniger
+    /// fehleranfällig als eine verkettete Fortschreibung.
+    /// </summary>
+    private async Task RecomputePerformanceAsync(long portfolioId, long snapshotId, CancellationToken ct)
+    {
+        var settlementAccountIds = await settlementAccountRepository.GetAccountIdsForPortfolioAsync(portfolioId, ct);
+        if (settlementAccountIds.Count == 0)
+        {
+            return;
+        }
+
+        var settlementTransactions = await transactionRepository.GetForAccountsAsync(settlementAccountIds, ct);
+        var valuationHistory = await snapshotRepository.GetValuationHistoryAsync(portfolioId, ct);
+        var latestValue = valuationHistory[^1].TotalValue;
+
+        var netInvested = DepotPerformanceCalculator.CalculateNetInvestedCapital(latestValue, settlementTransactions);
+
+        var dailyValuations = DepotPerformanceCalculator.ConsolidateToDailyLastValue(
+            valuationHistory.Select(v => (v.Timestamp, v.TotalValue)).ToList());
+        var twr = DepotPerformanceCalculator.CalculateTimeWeightedReturn(dailyValuations, settlementTransactions);
+
+        await snapshotRepository.UpdatePerformanceAsync(
+            snapshotId, netInvested.NetInvestedCapital, netInvested.DividendsReceived, twr?.ReturnPercent, ct);
     }
 }

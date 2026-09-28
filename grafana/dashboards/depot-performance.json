@@ -1,7 +1,7 @@
 {
   "uid": "comdirect-depot-performance",
   "title": "comdirect-fetch: Depot-Performance",
-  "description": "Unrealisierter Gewinn/Verlust der aktuell gehaltenen Depotpositionen (total_value vs. acquisition_value aus portfolio_snapshots) – KONZEPT.md Abschnitt 6, Phase 4, vereinfachte Variante. ACHTUNG: enthält NICHT realisierte Gewinne/Verluste aus bereits verkauften Positionen und NICHT externe Ein-/Auszahlungen auf das Verrechnungskonto – dafür fehlt aktuell sowohl eine Depot↔Konto-Verknüpfung im Datenmodell als auch verifizierbare echte Wertpapier-Handelsdaten. Siehe docs/konzept.md Abschnitt 9.",
+  "description": "Zwei Sichten auf die Depot-Performance (KONZEPT.md Abschnitt 6 Phase 4, Issue #12). Oben: unrealisierter Gewinn/Verlust auf Basis des von comdirect gemeldeten Anschaffungswerts (acquisition_value) der aktuell gehaltenen Positionen – deckt die VOLLE Kaufhistorie ab, aber NICHT bereits realisierte Gewinne/Verluste verkaufter Positionen. Unten: um externe Ein-/Auszahlungen bereinigte Kennzahlen (Netto-Kapitaleinsatz-Methode und tagesverkettete Time-Weighted Return) – präziser in der Methodik, aber NUR ab dem Zeitpunkt aussagekräftig, seit dem comdirect-fetch läuft (net_invested_capital ist NULL für Snapshots vor v0.23.0 bzw. ohne erkannte Depot↔Verrechnungskonto-Verknüpfung, siehe docs/konzept.md Abschnitt 6).",
   "editable": true,
   "schemaVersion": 39,
   "version": 1,
@@ -117,6 +117,138 @@
           "format": "table",
           "rawQuery": true,
           "rawSql": "SELECT (SUM(total_value) - SUM(acquisition_value)) / NULLIF(SUM(acquisition_value), 0) * 100 AS `Rendite`\nFROM portfolio_snapshots\nWHERE recorded_at = (SELECT MAX(recorded_at) FROM portfolio_snapshots)"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Depotwert vs. Netto-Kapitaleinsatz (bereinigt, seit Tracking-Beginn)",
+      "description": "Netto-Kapitaleinsatz = Summe aller Wertpapier-Käufe abzüglich -Verkäufe auf den depot-verknüpften Verrechnungskonten (transaction_type 'Securities'), erhaltene Dividenden separat. Nur Snapshots ab v0.23.0 mit erkannter Depot↔Konto-Verknüpfung. Bei nur einem Depot Summe = Einzelwert.",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 28 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "spanNulls": true }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ps.recorded_at AS time, 'Depotwert' AS metric, SUM(ps.total_value) AS value\nFROM portfolio_snapshots ps\nWHERE $__timeFilter(ps.recorded_at) AND ps.net_invested_capital IS NOT NULL\nGROUP BY ps.recorded_at\nUNION ALL\nSELECT ps.recorded_at AS time, 'Netto-Kapitaleinsatz' AS metric, SUM(ps.net_invested_capital) AS value\nFROM portfolio_snapshots ps\nWHERE $__timeFilter(ps.recorded_at) AND ps.net_invested_capital IS NOT NULL\nGROUP BY ps.recorded_at\nUNION ALL\nSELECT ps.recorded_at AS time, 'Dividenden kumuliert' AS metric, SUM(ps.dividends_received) AS value\nFROM portfolio_snapshots ps\nWHERE $__timeFilter(ps.recorded_at) AND ps.net_invested_capital IS NOT NULL\nGROUP BY ps.recorded_at\nORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Bereinigter Gewinn/Verlust (Netto-Kapitaleinsatz-Methode)",
+      "description": "Depotwert + erhaltene Dividenden − Netto-Kapitaleinsatz.",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 40 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "fillOpacity": 20 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ps.recorded_at AS time, 'Bereinigter Gewinn/Verlust' AS metric,\n       SUM(ps.total_value) + SUM(ps.dividends_received) - SUM(ps.net_invested_capital) AS value\nFROM portfolio_snapshots ps\nWHERE $__timeFilter(ps.recorded_at) AND ps.net_invested_capital IS NOT NULL\nGROUP BY ps.recorded_at\nORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Time-Weighted Return (%, tagesverkettet)",
+      "description": "Präzisere, um den Zeitpunkt der Ein-/Auszahlungen bereinigte Rendite (KONZEPT.md Abschnitt 6). Bei mehreren Depots wird bewusst nicht über die Prozentwerte summiert/gemittelt - aktuell nur für ein einzelnes Depot aussagekräftig.",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 40 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter" }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ps.recorded_at AS time, 'TWR' AS metric, ps.time_weighted_return_pct AS value\nFROM portfolio_snapshots ps\nWHERE $__timeFilter(ps.recorded_at) AND ps.time_weighted_return_pct IS NOT NULL\nORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Bereinigter Gewinn/Verlust aktuell",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 50 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyEUR" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT SUM(total_value) + SUM(dividends_received) - SUM(net_invested_capital) AS `Gewinn_Verlust`\nFROM portfolio_snapshots\nWHERE recorded_at = (SELECT MAX(recorded_at) FROM portfolio_snapshots WHERE net_invested_capital IS NOT NULL)"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Rendite aktuell (Netto-Kapitaleinsatz)",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 50 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (SUM(total_value) + SUM(dividends_received) - SUM(net_invested_capital)) / NULLIF(SUM(net_invested_capital), 0) * 100 AS `Rendite`\nFROM portfolio_snapshots\nWHERE recorded_at = (SELECT MAX(recorded_at) FROM portfolio_snapshots WHERE net_invested_capital IS NOT NULL)"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Time-Weighted Return aktuell",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 50 },
+      "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT time_weighted_return_pct AS `TWR`\nFROM portfolio_snapshots\nWHERE time_weighted_return_pct IS NOT NULL\nORDER BY recorded_at DESC\nLIMIT 1"
         }
       ]
     }
