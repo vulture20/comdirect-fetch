@@ -90,6 +90,31 @@ public sealed class TransactionRepository(IDbConnectionFactory connectionFactory
         return rows.AsList();
     }
 
+    /// <summary>Alle Umsätze der angegebenen Konten - Basis für die Depot-Performance-Berechnung
+    /// über die depot-verknüpften Verrechnungskonten (Issue #12, KONZEPT.md Abschnitt 6 Phase 4).</summary>
+    public async Task<IReadOnlyList<Transaction>> GetForAccountsAsync(
+        IEnumerable<long> accountIds, CancellationToken cancellationToken = default)
+    {
+        using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        const string sql = """
+            SELECT id AS Id, account_id AS AccountId, comdirect_reference AS ComdirectReference,
+                   booking_date AS BookingDate, value_date AS ValueDate, amount AS Amount, currency AS Currency,
+                   booking_text AS BookingText, transaction_type AS TransactionType, counterparty_iban AS CounterpartyIban, counterparty_name AS CounterpartyName,
+                   category_id AS CategoryId, manually_categorized AS ManuallyCategorized, first_seen_at AS FirstSeenAt
+            FROM transactions
+            WHERE account_id IN @AccountIds;
+            """;
+
+        var ids = accountIds.ToArray();
+        if (ids.Length == 0)
+        {
+            return [];
+        }
+
+        var rows = await connection.QueryAsync<Transaction>(sql, new { AccountIds = ids });
+        return rows.AsList();
+    }
+
     /// <summary>Alle Umsätze unabhängig vom Kategorisierungsstatus - Basis für die Regel-Vorschau gegen Echtdaten (GitHub-Issue #13, KONZEPT.md Abschnitt 12).</summary>
     public async Task<IReadOnlyList<Transaction>> GetAllAsync(CancellationToken cancellationToken = default)
     {

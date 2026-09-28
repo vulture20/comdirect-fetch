@@ -227,11 +227,16 @@ alle mit echten Daten verifiziert:
   Ordergebühren). Interne Umbuchungen zwischen eigenen Konten sind ausgeschlossen. Enthält
   seit 0.18.0 einen Dashboard-Link „Kategorien/Regeln bearbeiten →", der `/admin/rules/`
   direkt öffnet.
-- **`grafana/dashboards/depot-performance.json`** – „Depot-Performance" (Phase 4,
-  vereinfacht): Depotwert vs. Kapitaleinsatz, unrealisierter Gewinn/Verlust absolut und in
-  Prozent. Enthält bewusst **keine** realisierten Gewinne aus verkauften Positionen und
-  **keine** externen Ein-/Auszahlungen – dafür fehlt aktuell die Datengrundlage (siehe
-  `docs/konzept.md` Abschnitt 9).
+- **`grafana/dashboards/depot-performance.json`** – „Depot-Performance" (Phase 4): zwei
+  Sichten. Oben die ursprüngliche, vereinfachte Variante (Depotwert vs. Kapitaleinsatz laut
+  comdirect-Anschaffungswert, unrealisierter Gewinn/Verlust) – deckt die volle Kaufhistorie ab,
+  aber keine bereits realisierten Gewinne aus verkauften Positionen. Unten seit 0.23.0
+  (Issue #12) die um externe Ein-/Auszahlungen bereinigte Sicht (Netto-Kapitaleinsatz-Methode
+  und tagesverkettete Time-Weighted Return) – präziser in der Methodik, aber nur für
+  Kapitalbewegungen seit Beginn des Trackings aussagekräftig; bei einem bereits lange
+  bestehenden Depot zeigt die Netto-Kapitaleinsatz-Rendite deshalb aktuell einen stark
+  überzeichneten Wert, die Time-Weighted Return ist davon nicht betroffen (siehe
+  `docs/konzept.md` Abschnitt 13).
 
 Alle JSON-Dateien sind die Quelle der Wahrheit und werden per
 [Grafana-HTTP-API](https://grafana.com/docs/grafana/latest/developers/http_api/dashboard/)

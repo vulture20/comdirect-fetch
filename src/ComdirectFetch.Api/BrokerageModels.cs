@@ -19,6 +19,15 @@ public sealed class DepotEntry
 
     [JsonPropertyName("depotDisplayId")]
     public string? DepotDisplayId { get; init; }
+
+    /// <summary>Kontoverknüpfung für Issue #12 (KONZEPT.md Abschnitt 6 Phase 4) - laut Swagger die
+    /// "Account Id" des Standard-Verrechnungskontos; Format (UUID wie accounts.comdirect_account_id
+    /// oder Kontonummer) live gegen echte Depots verifiziert, siehe PortfolioFetchService.</summary>
+    [JsonPropertyName("defaultSettlementAccountId")]
+    public string? DefaultSettlementAccountId { get; init; }
+
+    [JsonPropertyName("settlementAccountIds")]
+    public List<string>? SettlementAccountIds { get; init; }
 }
 
 public sealed class DepotPositionsResponse
