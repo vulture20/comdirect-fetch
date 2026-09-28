@@ -43,6 +43,9 @@ public sealed class PortfolioFetchService(
         try
         {
             depots = await brokerageClient.GetDepotsAsync(token, stoppingToken);
+            logger.LogInformation(
+                "Depotabruf lieferte {Count} Depot(s): {DisplayIds}",
+                depots.Count, string.Join(", ", depots.Select(d => d.DepotDisplayId ?? d.DepotId)));
         }
         catch (Exception ex)
         {
