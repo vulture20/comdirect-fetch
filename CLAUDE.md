@@ -321,6 +321,25 @@ Do this as part of the change itself, not only when the user asks for it.
   The original `acquisition_value`-based panel (§9, v0.10.0) remains the only one covering full
   purchase history. `grafana/dashboards/depot-performance.json` now shows both views, each
   panel's description stating its own scope/limitation explicitly.
+- **Security hardening (v1.0.0, breaking change)**: a manual security review found `/auth/*`,
+  `/debug/*` and `POST /admin/credentials` relied on an unverified "host-local only" assumption —
+  live-disproven, `docker-compose.yml`'s `ports: "8750:8080"` binds all interfaces and the host
+  firewall doesn't restrict it. Fixed by widening the existing `Admin__Password` middleware
+  (`Program.cs`, was `/admin/rules` only) to also cover `/auth`, `/debug`, `/admin/credentials` —
+  same password, fail-closed 503 if unset, `/health` deliberately left open. `comdirectctl.sh` now
+  resolves the password itself (`COMDIRECT_FETCH_ADMIN_PASSWORD` env var → `Admin__Password` from
+  `.env` next to the script → a literal fallback variable in the script) and sends it via `-u` on
+  every request. Also: the container no longer runs as root (`docker/Dockerfile`: `USER $APP_UID`,
+  the `app` user already built into `mcr.microsoft.com/dotnet/aspnet:10.0`, live-verified UID/GID
+  1654). **Live-caught regression while implementing this**: Docker Compose's per-secret
+  `uid`/`gid`/`mode` overrides only apply in Swarm mode — under plain `docker compose up` they're
+  silently ignored (this host's Compose v5.5.0 at least warns), so secrets stayed root:root and
+  the now-unprivileged process crashed immediately with `UnauthorizedAccessException` reading
+  `Comdirect__ClientSecret`. Fixed by reverting `Comdirect__ClientId`/`Comdirect__ClientSecret`/
+  `credential_key` from Compose `secrets:` to plain read-only bind mounts (which *do* pass host
+  file ownership through exactly) plus `chown 1654:1654` on all three host files — required
+  operator action before upgrading, permissions stay 600/400, only the owner changes from root to
+  the dedicated app user (strictly tighter, not looser, than before).
 - Official docs live at `/opt/comdirect-fetch/docs` (Swagger, Postman collection, PDF spec)
   — check there first before guessing at API behavior, but confirm against a real request
   when in doubt: the docs have been wrong before (see above).

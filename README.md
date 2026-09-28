@@ -23,8 +23,8 @@ nicht mehr nur als Klartext in `.env` gehalten – siehe dort für das vollstän
 (Bedrohungsmodell, Begründung). Einmaliges Setup vor dem ersten `docker compose up`:
 
 ```bash
-# 1. Client-ID/Client-Secret als Docker-Compose-Secret-Dateien anlegen (ersetzt die
-#    entsprechenden Zeilen in .env; secrets/ ist gitignored):
+# 1. Client-ID/Client-Secret als dateibasierte Secrets anlegen (ersetzt die entsprechenden
+#    Zeilen in .env; secrets/ ist gitignored):
 mkdir -p secrets
 printf '%s' 'DEINE_CLIENT_ID'     > secrets/Comdirect__ClientId
 printf '%s' 'DEIN_CLIENT_SECRET'  > secrets/Comdirect__ClientSecret
@@ -35,6 +35,13 @@ chmod 600 secrets/Comdirect__ClientId secrets/Comdirect__ClientSecret
 ./scripts/comdirectctl.sh generate-bootstrap-key
 # Standardpfad /etc/comdirect-fetch/credential.key (überschreibbar per Argument), chmod 400.
 # Bricht bewusst ab, falls dort schon ein Schlüssel liegt.
+
+# 3. Seit 1.0.0 läuft der Container nicht mehr als root (docs/konzept.md Abschnitt 14) - alle
+#    drei Dateien müssen dem Container-Nutzer gehören, sonst startet der Dienst nicht
+#    (chown-Ziel = UID/GID des "app"-Nutzers im aspnet:10.0-Basisimage; prüfen mit
+#    `docker run --rm mcr.microsoft.com/dotnet/aspnet:10.0 sh -c 'id app'`, aktuell 1654):
+chown 1654:1654 secrets/Comdirect__ClientId secrets/Comdirect__ClientSecret
+sudo chown 1654:1654 /etc/comdirect-fetch/credential.key
 ```
 
 Auch der Schlüssel für die Session-Token-Persistierung (`Comdirect__TokenEncryptionKeyBase64`,
@@ -97,8 +104,13 @@ veröffentlicht. Manueller Testlauf (ohne `latest` zu überschreiben) über
 ## Erste Anmeldung (TAN-Freigabe) und Status
 
 comdirect verlangt beim Aufbau einer neuen Session eine TAN-Bestätigung, die der Container
-nicht automatisch erledigen kann (siehe `docs/konzept.md`, Abschnitt 3). Einfachster Weg über
-[`scripts/comdirectctl.sh`](scripts/comdirectctl.sh) (Voraussetzung: `curl`, `jq`):
+nicht automatisch erledigen kann (siehe `docs/konzept.md`, Abschnitt 3). **Seit 1.0.0 erfordern
+`/auth/*` und `/debug/*` `Admin__Password`** (HTTP Basic Auth, Breaking Change - siehe Abschnitt
+14 des Konzepts; ohne gesetztes Passwort liefern diese Endpunkte HTTP 503 statt zu funktionieren;
+nur `/health` bleibt offen). Einfachster Weg über
+[`scripts/comdirectctl.sh`](scripts/comdirectctl.sh) (Voraussetzung: `curl`, `jq`) - das Skript
+ermittelt das Passwort automatisch (Umgebungsvariable `COMDIRECT_FETCH_ADMIN_PASSWORD`, sonst aus
+der `.env`-Datei im Repo-Root, sonst ein im Skript direkt eintragbarer Fallback):
 
 ```bash
 ./scripts/comdirectctl.sh auth start
@@ -116,12 +128,14 @@ nicht automatisch erledigen kann (siehe `docs/konzept.md`, Abschnitt 3). Einfach
 ```
 
 Äquivalent direkt per `curl` gegen die HTTP-API (Basis-URL per `COMDIRECT_FETCH_URL`
-überschreibbar, Standard `http://localhost:8750`):
+überschreibbar, Standard `http://localhost:8750`; `-u admin:...` mit dem `Admin__Password`
+aus `.env` für `/auth/*`/`/debug/*` - Benutzername ist beliebig, es gibt nur ein
+gemeinsames Passwort):
 
 ```bash
-curl -X POST http://localhost:8750/auth/start
-curl -X POST http://localhost:8750/auth/confirm -H "Content-Type: application/json" -d '{"tanCode": null}'
-curl http://localhost:8750/health
+curl -u "admin:$Admin__Password" -X POST http://localhost:8750/auth/start
+curl -u "admin:$Admin__Password" -X POST http://localhost:8750/auth/confirm -H "Content-Type: application/json" -d '{"tanCode": null}'
+curl http://localhost:8750/health   # /health bleibt ohne Auth erreichbar
 ```
 
 (Port 8750 statt des ursprünglich geplanten 8080, da 8080 auf diesem Host bereits belegt war – siehe `docker/docker-compose.yml`.)

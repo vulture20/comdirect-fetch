@@ -323,18 +323,27 @@ eingestuft als Client-ID/Client-Secret (reine API-Ebene) – das deckt sich mit 
 in diesem Projekt (Client-ID/Secret wurden einmal direkt im Chat geteilt, die PIN nie). Beide Wert-
 Paare bekommen deshalb bewusst unterschiedlich starken Schutz statt eines einheitlichen Mechanismus.
 
-### A) Client-ID/Client-Secret: Docker-Compose-Secrets statt Umgebungsvariable
+### A) Client-ID/Client-Secret: dateibasiert statt Umgebungsvariable
 
-Statt über `env_file`/`environment:` werden Client-ID und Client-Secret als dateibasierte
-Docker-Compose-Secrets bereitgestellt: zwei Dateien außerhalb von Git (`secrets/Comdirect__ClientId`,
-`secrets/Comdirect__ClientSecret`, Dateirechte `600`, `secrets/` gitignored), über einen
-`secrets:`-Block in `docker/docker-compose.yml` referenziert und dadurch als Dateien unter
+Statt über `env_file`/`environment:` werden Client-ID und Client-Secret dateibasiert
+bereitgestellt: zwei Dateien außerhalb von Git (`secrets/Comdirect__ClientId`,
+`secrets/Comdirect__ClientSecret`, Dateirechte `600`, `secrets/` gitignored), unter
 `/run/secrets/…` im Container verfügbar statt als Umgebungsvariable. Auf Code-Seite liest der im
 ASP.NET-Core-Shared-Framework bereits enthaltene `Microsoft.Extensions.Configuration.KeyPerFile`-
 Provider (`builder.Configuration.AddKeyPerFile("/run/secrets", optional: true)` in `Program.cs`)
-die Secret-Dateien ein und bindet sie automatisch in dieselben Konfigurationsfelder wie zuvor die
+die Dateien ein und bindet sie automatisch in dieselben Konfigurationsfelder wie zuvor die
 Umgebungsvariablen (Dateiname = Konfigurationsschlüssel, `__` als Trenner) – kein Eigenbau nötig.
 `.env` bleibt als Fallback für lokale Entwicklung ohne Docker Compose bestehen.
+
+**Mounting-Mechanismus seit v1.0.0 geändert** (Abschnitt 14): ursprünglich über einen
+Docker-Compose-`secrets:`-Block, seit dem Umstieg auf einen nicht-root-Container-Nutzer aber als
+schreibgeschützter Bind-Mount in `docker/docker-compose.yml` – Grund: Compose respektiert
+`uid`/`gid`/`mode` für `secrets:` nur im Swarm-Modus, unter normalem `docker compose up` bleiben
+sie live bestätigt root:root und wurden für den jetzt unprivilegierten Prozess unlesbar. Ein
+Bind-Mount übernimmt die Host-Dateirechte dagegen exakt; die drei betroffenen Dateien müssen daher
+dem Container-App-Nutzer gehören (`chown 1654:1654 ...`, Details siehe Abschnitt 14). Am
+grundsätzlichen Zweck (raus aus `docker inspect`/Umgebungsvariablen) ändert das nichts – Bind-Mount
+und Compose-Secret sind beides Datei-basierte Mechanismen, keiner geht über Umgebungsvariablen.
 
 Das schließt die Exposition dieser zwei Werte über `docker inspect`, `docker exec … env`,
 `/proc/<pid>/environ` und versehentliche Env-Var-Dumps in Logs. Es schließt **nicht**, dass die
@@ -607,17 +616,17 @@ ausgelagert, damit beide Seiten optisch konsistent bleiben, ohne es zu duplizier
 
 ### Zugriffsschutz
 
-Bewusst anders als die übrigen `/debug/*`/`/auth/*`-Endpunkte und auch `/admin/credentials`
-(Abschnitt 10 B – die bleiben alle ungeschützt, reine, sofort abgeschlossene Aktionen ohne
-dauerhafte Konfigurationsänderung): `/admin/rules/*` (Web-Oberfläche **und** die zugehörigen
-CRUD-/Test-Endpunkte) bekommt HTTP-Basic-Auth mit einem Shared-Passwort aus `Admin__Password` –
-analog zum bisherigen Muster „ein Secret in `.env`" (`Comdirect__TokenEncryptionKeyBase64`,
-`GRAFANA_TOKEN`). Kein neues NuGet-Paket – ein einfacher Header-Check
-(`Authorization: Basic base64(user:pass)`, `ComdirectFetch.Worker.AdminAuth`, konstante
-Vergleichszeit über `CryptographicOperations.FixedTimeEquals`, Benutzername beliebig/ignoriert) in
-einer kleinen eigenen Middleware. Ist `Admin__Password` nicht gesetzt, liefert `/admin/rules/*`
-durchgängig HTTP 503 statt ungeschützt erreichbar zu sein – die Funktion ist dann schlicht nicht
-nutzbar, nicht offen.
+`/admin/rules/*` (Web-Oberfläche **und** die zugehörigen CRUD-/Test-Endpunkte) bekommt
+HTTP-Basic-Auth mit einem Shared-Passwort aus `Admin__Password` – analog zum bisherigen Muster
+„ein Secret in `.env`" (`Comdirect__TokenEncryptionKeyBase64`, `GRAFANA_TOKEN`). Kein neues
+NuGet-Paket – ein einfacher Header-Check (`Authorization: Basic base64(user:pass)`,
+`ComdirectFetch.Worker.AdminAuth`, konstante Vergleichszeit über
+`CryptographicOperations.FixedTimeEquals`, Benutzername beliebig/ignoriert) in einer kleinen
+eigenen Middleware. Ist `Admin__Password` nicht gesetzt, liefert `/admin/rules/*` durchgängig
+HTTP 503 statt ungeschützt erreichbar zu sein – die Funktion ist dann schlicht nicht nutzbar,
+nicht offen. **Seit v1.0.0 gilt dasselbe für `/debug/*`, `/auth/*` und `/admin/credentials`** –
+die ursprüngliche Begründung hier ("die bleiben alle ungeschützt, da nur host-lokal erreichbar")
+hat sich als falsche Annahme herausgestellt, siehe Abschnitt 14.
 
 ### Schutz der Spezial-Kategorien
 
@@ -728,3 +737,91 @@ Umstellung auf eine Klasse mit settable Properties (gleiches Muster wie `Transac
 `grafana/dashboards/depot-performance.json` zeigt jetzt beide Sichten nebeneinander: die
 bestehenden `acquisition_value`-basierten Panels oben, die neuen Netto-Kapitaleinsatz-/TWR-Panels
 unten, mit expliziten Beschreibungen zur jeweiligen Aussagekraft/Einschränkung.
+
+## 14. Security-Review und Härtung (umgesetzt in 1.0.0, Breaking Change)
+
+Auf Nutzeranfrage manuell durchgeführter Security-Review des gesamten Codes (SQL-Konstruktion,
+Auth, Krypto, Admin-UI/XSS, Secrets-Handling, Deployment-Konfiguration), live gegen den
+tatsächlich laufenden Container/Host geprüft, nicht nur den Quelltext gelesen.
+
+### Fund: unauthentifizierte Endpunkte sind übers Netzwerk erreichbar
+
+`/auth/*`, `/debug/*` und `POST /admin/credentials` waren bewusst unauthentifiziert, mit der
+Begründung "Dienst ist nur host-lokal auf diesem Port erreichbar" (Abschnitt 10 B, 12). Live
+widerlegt: `docker-compose.yml`s `ports: "8750:8080"` bindet auf alle Interfaces (`ss -tlnp`:
+`0.0.0.0:8750`, `[::]:8750`), und die iptables-Regeln des geteilten Homelab-Hosts lassen diesen
+Traffic von `0.0.0.0/0` durch, ohne Einschränkung. Jeder mit Netzwerkzugriff auf den Host konnte
+also ohne Zugangsdaten `/admin/credentials` überschreiben, `/debug/summary` auslesen (Zeilenzahlen,
+letzte 10 sync_log-Fehlermeldungen) oder `/auth/start`/`/debug/fetch-now`/`/debug/recategorize`/
+`/debug/consolidate`/`/debug/notify-test` auslösen. `/admin/rules/*` war davon nicht betroffen
+(dort griff Basic Auth bereits korrekt).
+
+**Nutzerentscheidung**: nicht das Port-Binding ändern (Alternativvorschlag des Reviews), sondern
+die bestehende Basic-Auth-Prüfung ausweiten. Ergebnis (`Program.cs`-Middleware, vorher nur
+`/admin/rules` geprüft): dieselbe `Admin__Password`-Prüfung deckt jetzt zusätzlich `/auth`,
+`/debug` und `/admin/credentials` ab – ein gemeinsames Passwort statt eines zweiten Secrets, wie
+zuvor fail-closed (HTTP 503, nicht offen, wenn `Admin__Password` fehlt). `/health` bleibt bewusst
+offen (nur Status/App-Version, keine sensiblen Daten, damit einfache Erreichbarkeits-/
+Monitoring-Checks ohne Zugangsdaten funktionieren). `scripts/comdirectctl.sh` ermittelt das
+Passwort jetzt selbst und hängt es an jeden Request an – Reihenfolge: Umgebungsvariable
+`COMDIRECT_FETCH_ADMIN_PASSWORD`, sonst `Admin__Password` aus der `.env`-Datei neben dem Skript
+(Repo-Root, wie von `docker-compose.yml` genutzt), sonst ein im Skript direkt eintragbarer
+Literal-Fallback (`ADMIN_PASSWORD_LITERAL`) – deckt alle drei vom Nutzer genannten Varianten ab.
+
+Bewusst als **Breaking Change** markiert (MAJOR-Bump auf 1.0.0): eine Installation ohne
+konfiguriertes `Admin__Password` verliert mit diesem Update den bisherigen (unsicheren, aber
+funktionierenden) Zugriff auf `/auth/*`/`/debug/*` komplett, bis ein Passwort gesetzt wird.
+
+### Fund/Härtung: Container lief als root
+
+Kein `USER` in `docker/Dockerfile`, daher root-Default des Basisimages. Behoben mit
+`USER $APP_UID` – der bereits im `mcr.microsoft.com/dotnet/aspnet:10.0`-Basisimage enthaltene
+unprivilegierte Nutzer (live geprüft: `app`, UID/GID 1654). Port 8080 braucht ohnehin keine
+Root-Rechte (nur Ports < 1024 tun das).
+
+**Live entdeckte Regression beim Umsetzen**: Docker Compose unterstützt `uid`/`gid`/`mode` für
+`secrets:`-Einträge dokumentiert nur im Swarm-Modus. Unter normalem `docker compose up` wurden
+diese Felder mit einer expliziten Warnung ignoriert (`secrets \`uid\`, \`gid\` and \`mode\` are
+not supported, they will be ignored`, Compose v5.5.0) – die drei Secret-Dateien blieben
+root:root mit den Rechten der Host-Quelldatei, für den jetzt unprivilegierten Prozess unlesbar.
+Der Dienst stürzte beim ersten Testlauf sofort mit `System.UnauthorizedAccessException: Access to
+the path '/run/secrets/Comdirect__ClientSecret' is denied` ab – Fund und Fix noch **vor**
+Abschluss dieser Änderung, nicht erst danach bemerkt (siehe „Live verifiziert“-Ablauf unten).
+
+Behoben durch Rückkehr von Compose-`secrets:` zu schreibgeschützten Bind-Mounts für
+`Comdirect__ClientId`/`Comdirect__ClientSecret`/`credential_key` (Abschnitt 10 A/B) – Bind-Mounts
+übernehmen Host-Dateirechte exakt 1:1, unabhängig vom Compose-Modus. Dafür müssen die drei
+Host-Dateien dem Container-App-Nutzer gehören:
+
+```bash
+chown 1654:1654 secrets/Comdirect__ClientId secrets/Comdirect__ClientSecret
+sudo chown 1654:1654 /etc/comdirect-fetch/credential.key
+```
+
+Rechte bleiben unverändert eng (`600`/`400`), nur der Eigentümer wechselt von root auf den
+dedizierten App-Nutzer – strenger als vorher (zuvor konnte jeder root-Prozess auf dem Host
+mitlesen), nicht lockerer. Die UID 1654 ist an das konkrete Basisimage-Tag gekoppelt
+(`docker run --rm mcr.microsoft.com/dotnet/aspnet:10.0 sh -c 'id app'`) – bei einem
+Image-Tag-Wechsel mit anderer App-UID müssen `USER $APP_UID` (bleibt dynamisch korrekt) und die
+drei `chown`-Ziele (statischer Wert, muss manuell nachgezogen werden) im Blick behalten werden.
+
+### Live verifiziert
+
+Nach beiden Fixes: Prozess läuft als `app` (UID 1654, nicht root), alle drei Secret-Dateien
+lesbar, comdirect-Session-Wiederherstellung funktioniert unverändert (`authState: Authentifiziert`
+direkt nach Neustart). `/health` liefert ohne Auth 200; `/debug/summary`, `/auth/start`,
+`/admin/credentials` liefern ohne Auth 401, mit falschem Passwort 401, mit korrektem Passwort
+200 (bzw. den jeweiligen regulären Status je Endpunkt-Logik); `/admin/rules/api/categories` funktioniert unverändert mit dem
+bestehenden Passwort (Regressionscheck). `comdirectctl.sh status` funktioniert Ende-zu-Ende mit
+automatisch aus `.env` gelesenem Passwort.
+
+### Weitere Review-Ergebnisse (keine Code-Änderung nötig)
+
+Ebenfalls geprüft, kein Fund: SQL-Injection (alle Dapper-Queries parametrisiert, keine
+String-Konkatenation), XSS in der Admin-Oberfläche (`escapeHtml` konsequent auf allen
+DB-Werten, unescapte Interpolationen ausschließlich Zahlen/IDs oder über `textContent`),
+AES-256-GCM-Implementierung (`SecretEncryption`, frischer Zufalls-Nonce pro Verschlüsselung),
+Klartext-Logging von Secrets (keines gefunden), `comdirectctl.sh` (kein `eval`, JSON sauber über
+`jq --arg`), Timing-sicherer Passwortvergleich (`CryptographicOperations.FixedTimeEquals`),
+`.env`/`secrets/` nie committed. Geringfügig, nicht behoben: volle IBANs werden seit v0.23.1 bei
+jedem Saldenabruf geloggt (keine Zugangsdaten, aber direkt identifizierende Finanzdaten in Logs).

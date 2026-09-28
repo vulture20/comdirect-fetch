@@ -6,12 +6,45 @@
 # Voraussetzungen: curl, jq, openssl
 # Basis-URL per Umgebungsvariable COMDIRECT_FETCH_URL überschreibbar
 # (Standard: http://localhost:8750, siehe docker/docker-compose.yml).
+#
+# Security-Review-Fund: /auth/*, /debug/* und /admin/credentials verlangen jetzt ebenfalls
+# Admin__Password (vorher unauthentifiziert, siehe CLAUDE.md/docs/konzept.md). Dieses Skript
+# ermittelt das Passwort in dieser Reihenfolge: (1) Umgebungsvariable
+# COMDIRECT_FETCH_ADMIN_PASSWORD, (2) Admin__Password aus der .env-Datei neben diesem Skript
+# (Repo-Root, wie von docker-compose.yml genutzt), (3) der Literal-Fallback in
+# ADMIN_PASSWORD_LITERAL unten - hier direkt eintragen, falls weder Env-Var noch .env genutzt
+# werden sollen.
 
 set -euo pipefail
 
 BASE_URL="${COMDIRECT_FETCH_URL:-http://localhost:8750}"
 SCRIPT_NAME="$(basename "$0")"
 JSON_OUTPUT=0
+
+# Fallback, falls weder COMDIRECT_FETCH_ADMIN_PASSWORD noch eine .env-Datei mit
+# Admin__Password gefunden werden - hier bei Bedarf direkt eintragen.
+ADMIN_PASSWORD_LITERAL=""
+
+resolve_admin_password() {
+  if [[ -n "${COMDIRECT_FETCH_ADMIN_PASSWORD:-}" ]]; then
+    printf '%s' "$COMDIRECT_FETCH_ADMIN_PASSWORD"
+    return
+  fi
+
+  local script_dir env_file line
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  env_file="${script_dir}/../.env"
+  if [[ -f "$env_file" ]]; then
+    line="$(grep -E '^Admin__Password=' "$env_file" | tail -n1 || true)"
+    if [[ -n "$line" ]]; then
+      printf '%s' "${line#Admin__Password=}"
+      return
+    fi
+  fi
+
+  printf '%s' "$ADMIN_PASSWORD_LITERAL"
+}
+ADMIN_PASSWORD="$(resolve_admin_password)"
 
 TMP_FILE=""
 # "if" statt "[[ ]] &&" verwenden: Unter 'set -e' würde ein zuletzt falsch ausgewertetes
@@ -87,6 +120,11 @@ Befehle:
 Umgebungsvariable COMDIRECT_FETCH_URL überschreibt die Basis-URL
 (Standard: ${BASE_URL}).
 
+/auth/*, /debug/* und /admin/credentials verlangen jetzt Admin__Password (Basic Auth).
+Dieses Skript ermittelt es automatisch: Umgebungsvariable COMDIRECT_FETCH_ADMIN_PASSWORD,
+sonst Admin__Password aus der .env-Datei im Repo-Root, sonst der Literal-Fallback
+ADMIN_PASSWORD_LITERAL am Skriptanfang.
+
 ACHTUNG: comdirect sperrt nach drei falschen TAN-Eingaben oder fünf TAN-Challenges
 ohne zwischenzeitliche Einlösung einer korrekten TAN den GESAMTEN Online-Banking-
 Zugang, nicht nur den API-Zugriff. "auth start" daher nicht automatisiert oder in
@@ -112,6 +150,7 @@ http_request() {
   TMP_FILE="$(mktemp)"
   local curl_args=(-s -o "$TMP_FILE" -w '%{http_code}' -X "$method" "${BASE_URL}${path}" -H 'Accept: application/json')
   [[ -n "$body" ]] && curl_args+=(-H 'Content-Type: application/json' --data "$body")
+  [[ -n "$ADMIN_PASSWORD" ]] && curl_args+=(-u "admin:${ADMIN_PASSWORD}")
 
   if ! HTTP_CODE="$(curl "${curl_args[@]}")"; then
     echo "Fehler: comdirect-fetch unter ${BASE_URL} nicht erreichbar." >&2

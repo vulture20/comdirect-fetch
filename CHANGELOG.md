@@ -4,6 +4,39 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 1.0.0 – Auth-Ausweitung + Container läuft nicht mehr als root (Breaking Change)
+
+Reaktion auf einen Security-Review-Fund: `/auth/*`, `/debug/*` und `POST /admin/credentials`
+galten als "eh nur host-lokal erreichbar" und blieben deshalb unauthentifiziert – live widerlegt,
+`docker-compose.yml` bindet den Port auf alle Interfaces, die Firewall des geteilten Homelab-Hosts
+lässt das durch. Zwei Änderungen, beide bewusst als **Breaking Change** markiert (MAJOR-Bump):
+
+- **Admin__Password schützt jetzt auch `/auth/*`, `/debug/*` und `/admin/credentials`**
+  (dasselbe Passwort wie `/admin/rules/*`, keine zweite Variable). Ohne konfiguriertes
+  `Admin__Password` sind diese Endpunkte komplett deaktiviert (503) statt offen – wie zuvor bei
+  `/admin/rules/*`. `/health` bleibt bewusst ungeschützt (nur Status/Version, für einfache
+  Erreichbarkeitschecks). `scripts/comdirectctl.sh` ermittelt das Passwort jetzt automatisch:
+  Umgebungsvariable `COMDIRECT_FETCH_ADMIN_PASSWORD`, sonst `Admin__Password` aus der
+  `.env`-Datei neben dem Skript, sonst ein im Skript direkt eintragbarer Literal-Fallback.
+- **Container läuft nicht mehr als root** (`docker/Dockerfile`: `USER $APP_UID`, der im
+  `aspnet:10.0`-Basisimage bereits enthaltene unprivilegierte Nutzer, live geprüft UID/GID 1654).
+  Dabei live entdeckt: Docker Compose unterstützt `uid`/`gid`/`mode` für `secrets:` nur im
+  Swarm-Modus – unter normalem `docker compose up` wurden diese Felder ignoriert und der Dienst
+  stürzte beim ersten Testlauf sofort mit "Access to the path ... is denied" ab, weil die
+  root-only-Secret-Dateien für den jetzt unprivilegierten Prozess unlesbar waren. Behoben durch
+  Wechsel von Compose-`secrets:` zurück zu schreibgeschützten Bind-Mounts (übernehmen Host-Rechte
+  1:1) kombiniert mit `chown 1654:1654` der drei Secret-Dateien auf dem Host
+  (`secrets/Comdirect__ClientId`, `secrets/Comdirect__ClientSecret`,
+  `/etc/comdirect-fetch/credential.key`) – **Betreiberaktion nötig vor dem Upgrade**, siehe
+  `docker/docker-compose.yml`-Kommentar. Rechte bleiben eng (600/400), nur der Owner wechselt von
+  root auf den dedizierten App-Nutzer.
+
+Live verifiziert nach dem Fix: Prozess läuft als `app` (UID 1654), alle drei Secret-Dateien
+lesbar, comdirect-Session-Wiederherstellung funktioniert weiterhin, `/health` offen,
+`/debug/summary`/`/auth/start`/`/admin/credentials` liefern ohne Auth 401, mit korrektem Passwort
+200, `/admin/rules/*` unverändert funktionsfähig, `comdirectctl.sh status` funktioniert Ende-zu-Ende
+mit automatisch aus `.env` gelesenem Passwort.
+
 ## 0.23.1 – Logging der Anzahl abgerufener Konten/Depots
 
 `BalanceFetchService`/`PortfolioFetchService` loggen jetzt bei jedem Abruf, wie viele Konten/
