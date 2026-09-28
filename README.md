@@ -280,3 +280,11 @@ das Skript aus der lokalen `.env`.
 Siehe `docs/konzept.md` Abschnitt 8 und `CLAUDE.md`: Anwendungsversion (SemVer, zentral in
 `ComdirectFetch.Domain.AppVersion`) und Datenbank-Schema-Version (`db/migrations/`) werden
 bei jeder relevanten Änderung automatisch angepasst.
+
+## Lizenz
+
+[GNU Affero General Public License v3.0 (or later)](LICENSE) – Copyright (C) 2026 Thorsten
+Schröpel. Die AGPL verlangt (anders als z. B. die MIT/Apache-Lizenz) insbesondere: wer eine
+veränderte Version dieses Dienstes über ein Netzwerk zugänglich macht (nicht nur bei
+Weitergabe des Programms selbst), muss den Quellcode dieser Version ebenfalls unter der AGPL
+zur Verfügung stellen.
