@@ -13,6 +13,7 @@ public sealed class PortfolioFetchService(
     PortfolioSnapshotRepository snapshotRepository,
     PortfolioSettlementAccountRepository settlementAccountRepository,
     AccountRepository accountRepository,
+    AccountBalanceRepository accountBalanceRepository,
     TransactionRepository transactionRepository,
     SyncLogRepository syncLogRepository,
     IOptions<FetchOptions> options,
@@ -104,7 +105,7 @@ public sealed class PortfolioFetchService(
                 });
 
                 await snapshotRepository.InsertPositionsAsync(domainPositions, stoppingToken);
-                await RecomputePerformanceAsync(portfolioId, snapshotId, stoppingToken);
+                await RecomputePerformanceAsync(portfolioId, stoppingToken);
                 await syncLogRepository.CompleteAsync(logId, SyncStatus.Erfolgreich, DateTimeOffset.UtcNow, cancellationToken: stoppingToken);
             }
             catch (Exception ex)
@@ -146,32 +147,55 @@ public sealed class PortfolioFetchService(
     }
 
     /// <summary>
-    /// Berechnet Netto-Kapitaleinsatz, erhaltene Dividenden und die tagesverkettete Time-Weighted
-    /// Return (Issue #12, ComdirectFetch.Domain.DepotPerformanceCalculator) neu aus der kompletten
-    /// Historie und trägt sie am gerade eingefügten Snapshot nach. Bewusst jedes Mal komplett neu
-    /// statt inkrementell fortgeschrieben - bei der aktuellen Datenmenge (Snapshots/Umsätze im
-    /// niedrigen drei- bis vierstelligen Bereich) vernachlässigbar teuer und deutlich weniger
-    /// fehleranfällig als eine verkettete Fortschreibung.
+    /// Berechnet Guthaben, Kapitalbasis, Dividenden und die tagesverkettete Time-Weighted
+    /// Return (Issue #12, ComdirectFetch.Domain.DepotPerformanceCalculator) für ALLE Snapshots ab dem
+    /// Bezugspunkt neu aus der kompletten Historie und trägt nur die Zeilen nach, deren gespeicherte
+    /// Werte abweichen. Bewusst nicht inkrementell fortgeschrieben: bei der aktuellen Datenmenge
+    /// (Snapshots im niedrigen vierstelligen Bereich) vernachlässigbar teuer, deutlich weniger
+    /// fehleranfällig - und selbstheilend: ein nachträglich auftauchender Umsatz korrigiert auch
+    /// die davorliegenden Zeilen, und der erste Lauf nach einer Modelländerung füllt die Historie auf.
     /// </summary>
-    private async Task RecomputePerformanceAsync(long portfolioId, long snapshotId, CancellationToken ct)
+    private async Task RecomputePerformanceAsync(long portfolioId, CancellationToken ct)
     {
-        var settlementAccountIds = await settlementAccountRepository.GetAccountIdsForPortfolioAsync(portfolioId, ct);
-        if (settlementAccountIds.Count == 0)
+        var links = await settlementAccountRepository.GetLinksAsync(portfolioId, ct);
+        var defaultAccountIds = links.Where(l => l.IsDefault).Select(l => l.AccountId).ToList();
+        if (defaultAccountIds.Count == 0)
         {
             return;
         }
 
-        var settlementTransactions = await transactionRepository.GetForAccountsAsync(settlementAccountIds, ct);
-        var valuationHistory = await snapshotRepository.GetValuationHistoryAsync(portfolioId, ct);
-        var latestValue = valuationHistory[^1].TotalValue;
+        var transactions = (await transactionRepository.GetForAccountsAsync(links.Select(l => l.AccountId), ct))
+            .Select(t => new LinkedTransaction(t, defaultAccountIds.Contains(t.AccountId)))
+            .ToList();
+        var latestBalances = await accountBalanceRepository.GetLatestBalancesAsync(defaultAccountIds, ct);
+        if (latestBalances.Count < defaultAccountIds.Count)
+        {
+            return;
+        }
 
-        var netInvested = DepotPerformanceCalculator.CalculateNetInvestedCapital(latestValue, settlementTransactions);
+        var rows = await snapshotRepository.GetPerformanceRowsAsync(portfolioId, ct);
 
-        var dailyValuations = DepotPerformanceCalculator.ConsolidateToDailyLastValue(
-            valuationHistory.Select(v => (v.Timestamp, v.TotalValue)).ToList());
-        var twr = DepotPerformanceCalculator.CalculateTimeWeightedReturn(dailyValuations, settlementTransactions);
+        var points = DepotPerformanceCalculator.Calculate(
+            rows.Select(r => new DepotSnapshotInput(r.SnapshotId, r.Timestamp, r.PositionsValue)).ToList(),
+            latestBalances, transactions);
 
-        await snapshotRepository.UpdatePerformanceAsync(
-            snapshotId, netInvested.NetInvestedCapital, netInvested.DividendsReceived, twr?.ReturnPercent, ct);
+        var rowsById = rows.ToDictionary(r => r.SnapshotId);
+        foreach (var point in points)
+        {
+            var cash = Math.Round(point.SettlementCash, 2);
+            var capital = Math.Round(point.NetInvestedCapital, 2);
+            var dividends = Math.Round(point.DividendsReceived, 2);
+            var twr = point.TimeWeightedReturnPercent is { } value ? Math.Round(value, 4) : (decimal?)null;
+
+            var stored = rowsById[point.SnapshotId];
+            if (stored.SettlementCash == cash
+                && stored.NetInvestedCapital == capital && stored.DividendsReceived == dividends
+                && stored.TimeWeightedReturnPercent == twr)
+            {
+                continue;
+            }
+
+            await snapshotRepository.UpdatePerformanceAsync(point.SnapshotId, cash, capital, dividends, twr, ct);
+        }
     }
 }
