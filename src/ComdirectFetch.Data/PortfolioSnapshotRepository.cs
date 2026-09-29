@@ -4,18 +4,23 @@ using ComdirectFetch.Domain;
 namespace ComdirectFetch.Data;
 
 /// <summary>
-/// Bewusst eine Klasse mit Property-Settern statt eines positional-Records: Dapper materialisiert
-/// Records über deren Primärkonstruktor und verlangt dafür exakte CLR-Typ-Übereinstimmung mit der
-/// SQL-Spalte (hier DATETIME -&gt; <see cref="DateTime"/>) - die sonst überall in diesem Projekt
-/// klaglos funktionierende automatische DateTime-zu-DateTimeOffset-Konvertierung greift nur beim
-/// property-setter-basierten Materialisieren normaler Klassen, live bestätigt durch
-/// "A parameterless default constructor or one matching signature ... is required" beim ersten
-/// Einsatz dieses Records (Issue #12).
+/// Ein Snapshot samt der bereits gespeicherten Performance-Werte (Issue #12). Bewusst eine Klasse mit
+/// Property-Settern statt eines positional-Records: Dapper materialisiert Records über deren
+/// Primärkonstruktor und verlangt dafür exakte CLR-Typ-Übereinstimmung mit der SQL-Spalte (hier
+/// DATETIME -&gt; <see cref="DateTime"/>) - die sonst überall in diesem Projekt klaglos funktionierende
+/// automatische DateTime-zu-DateTimeOffset-Konvertierung greift nur beim property-setter-basierten
+/// Materialisieren normaler Klassen, live bestätigt durch "A parameterless default constructor or one
+/// matching signature ... is required" beim ersten Einsatz eines Records an dieser Stelle.
 /// </summary>
-public sealed class PortfolioValuationPoint
+public sealed class PortfolioSnapshotPerformanceRow
 {
+    public long SnapshotId { get; set; }
     public DateTimeOffset Timestamp { get; set; }
-    public decimal TotalValue { get; set; }
+    public decimal PositionsValue { get; set; }
+    public decimal? SettlementCash { get; set; }
+    public decimal? NetInvestedCapital { get; set; }
+    public decimal? DividendsReceived { get; set; }
+    public decimal? TimeWeightedReturnPercent { get; set; }
 }
 
 /// <summary>Zeitreihen-Zugriff für portfolio_snapshots und portfolio_positions (KONZEPT.md Abschnitt 5).</summary>
@@ -34,19 +39,21 @@ public sealed class PortfolioSnapshotRepository(IDbConnectionFactory connectionF
     }
 
     /// <summary>Trägt die um externe Ein-/Auszahlungen bereinigten Kennzahlen (Issue #12) für einen
-    /// bereits eingefügten Snapshot nach - separat von InsertSnapshotAsync, da DepotPerformanceCalculator
-    /// die komplette Historie inkl. des gerade eingefügten Snapshots als Eingabe braucht.</summary>
+    /// Snapshot nach - separat von InsertSnapshotAsync, da DepotPerformanceCalculator die komplette
+    /// Historie als Eingabe braucht.</summary>
     public async Task UpdatePerformanceAsync(
         long snapshotId,
-        decimal? netInvestedCapital,
-        decimal? dividendsReceived,
+        decimal settlementCash,
+        decimal netInvestedCapital,
+        decimal dividendsReceived,
         decimal? timeWeightedReturnPercent,
         CancellationToken cancellationToken = default)
     {
         using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         const string sql = """
             UPDATE portfolio_snapshots
-            SET net_invested_capital = @NetInvestedCapital,
+            SET settlement_cash = @SettlementCash,
+                net_invested_capital = @NetInvestedCapital,
                 dividends_received = @DividendsReceived,
                 time_weighted_return_pct = @TimeWeightedReturnPercent
             WHERE id = @SnapshotId;
@@ -55,27 +62,30 @@ public sealed class PortfolioSnapshotRepository(IDbConnectionFactory connectionF
         await connection.ExecuteAsync(sql, new
         {
             SnapshotId = snapshotId,
+            SettlementCash = settlementCash,
             NetInvestedCapital = netInvestedCapital,
             DividendsReceived = dividendsReceived,
             TimeWeightedReturnPercent = timeWeightedReturnPercent,
         });
     }
 
-    /// <summary>Zeitpunkt+Depotwert aller Snapshots eines Depots, aufsteigend - Grundlage für
-    /// DepotPerformanceCalculator.ConsolidateToDailyLastValue (Issue #12). Eigener Record statt
-    /// ValueTuple, da Dapper QueryAsync&lt;T&gt; ValueTuples nicht direkt mappen kann.</summary>
-    public async Task<IReadOnlyList<PortfolioValuationPoint>> GetValuationHistoryAsync(
+    /// <summary>Alle Snapshots eines Depots mit den bereits gespeicherten Performance-Werten, aufsteigend -
+    /// Eingabe für DepotPerformanceCalculator.Calculate und Vergleichsbasis, um nur geänderte Zeilen zu schreiben.</summary>
+    public async Task<IReadOnlyList<PortfolioSnapshotPerformanceRow>> GetPerformanceRowsAsync(
         long portfolioId, CancellationToken cancellationToken = default)
     {
         using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         const string sql = """
-            SELECT recorded_at AS Timestamp, total_value AS TotalValue
+            SELECT id AS SnapshotId, recorded_at AS Timestamp, total_value AS PositionsValue,
+                   settlement_cash AS SettlementCash,
+                   net_invested_capital AS NetInvestedCapital, dividends_received AS DividendsReceived,
+                   time_weighted_return_pct AS TimeWeightedReturnPercent
             FROM portfolio_snapshots
             WHERE portfolio_id = @PortfolioId
             ORDER BY recorded_at ASC;
             """;
 
-        var rows = await connection.QueryAsync<PortfolioValuationPoint>(sql, new { PortfolioId = portfolioId });
+        var rows = await connection.QueryAsync<PortfolioSnapshotPerformanceRow>(sql, new { PortfolioId = portfolioId });
         return rows.AsList();
     }
 

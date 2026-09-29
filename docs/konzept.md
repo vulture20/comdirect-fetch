@@ -253,22 +253,17 @@ Diese Pflege übernimmt Claude Code während der Entwicklung selbstständig als 
   (`grafana/dashboards/depot-performance.json`, `CHANGELOG.md` 0.10.0) – unrealisierter
   Gewinn/Verlust aus `total_value − acquisition_value` – ist weiterhin die einzige, die die
   **volle** Kaufhistorie abdeckt (comdirects `acquisition_value` kennt den Anschaffungswert auch
-  für Positionen, die vor Beginn des Trackings gekauft wurden). Zusätzlich seit v0.23.0
-  (GitHub-Issue #12) die im Konzept ursprünglich vorgesehene Bereinigung um externe
-  Ein-/Auszahlungen (Netto-Kapitaleinsatz-Methode und tagesverkettete Time-Weighted Return,
-  siehe Abschnitt 6 Phase 4 Detailbeschreibung) – dafür fehlten beide zuvor genannten
-  Voraussetzungen: die Depot↔Verrechnungskonto-Verknüpfung (jetzt `defaultSettlementAccountId`/
-  `settlementAccountIds` aus der comdirect-API, live verifiziert im UUID-Format identisch zu
-  `accounts.comdirect_account_id`) und echte Wertpapier-Umsätze (`transaction_type = 'Securities'`,
-  nicht das dokumentierte „Wertpapierabrechnung” – 30+ echte Sparplan-Käufe vorhanden). **Wichtige
-  Einschränkung, live entdeckt**: die neuen Kennzahlen sind nur für Kapitalbewegungen aussagekräftig,
-  die seit Beginn des Trackings (v0.23.0) stattfanden – bei einem bereits lange bestehenden Depot
-  mit erheblichem Wert vor Trackingbeginn liefert die Netto-Kapitaleinsatz-Rendite deshalb aktuell
-  eine stark überzeichnete Prozentzahl (live beobachtet: ca. 4090 % statt eines sinnvollen Werts,
-  da `net_invested_capital` nur einen kleinen Bruchteil des tatsächlich historisch eingesetzten
-  Kapitals kennt). Die Time-Weighted-Return-Kennzahl ist davon nicht betroffen (sie bewertet nur
-  Teilperioden-Renditen innerhalb des Tracking-Zeitraums, keine Gesamtkapitalbasis) und daher schon
-  jetzt aussagekräftig. Beide Dashboard-Panels sind entsprechend beschriftet.
+  für Positionen, die vor Beginn des Trackings gekauft wurden). Zusätzlich seit 0.23.0
+  (GitHub-Issue #12), überarbeitet in 1.1.0, die im Konzept ursprünglich vorgesehene Bereinigung um
+  externe Ein-/Auszahlungen auf den Gesamtwert (Positionen + Guthaben des Verrechnungskontos) seit
+  Trackingbeginn, siehe Abschnitt 13: Depot↔Verrechnungskonto-Verknüpfung
+  (`defaultSettlementAccountId`/`settlementAccountIds`, live verifiziert im UUID-Format von
+  `accounts.comdirect_account_id`), `transaction_type = 'Securities'` (nicht das dokumentierte
+  „Wertpapierabrechnung”), und – erst nach den ersten echten Trades über das Verrechnungskonto
+  möglich – die Erkenntnis, dass Käufe/Verkäufe dort intern sind und nur Geld von außen zählt.
+  Offen: eine echte externe Überweisung auf/vom Verrechnungskonto liegt noch nicht vor (Annahme
+  `Transfer`, nur per Unit-Test abgesichert), ebenso ein Sparplan-Kauf innerhalb des Trackingzeitraums
+  (Lieferzeitpunkt der Anteile nicht direkt belegbar, angenommen Buchungstag).
 - **Auth-Status über Neustarts persistieren** (Abschnitt 3): umgesetzt (siehe `CHANGELOG.md` 0.11.0, `db/migrations/0006_auth_token_store.sql`). Der Session-Token wird bei optional gesetztem `Comdirect__TokenEncryptionKeyBase64` AES-256-GCM-verschlüsselt in der DB abgelegt und beim Start automatisch wiederhergestellt (inkl. Refresh zur Gültigkeitsprüfung) – ein Neustart innerhalb der Refresh-Token-Gültigkeit braucht dann keine neue TAN-Freigabe mehr. Ohne gesetzten Schlüssel bleibt das Verhalten wie zuvor (In-Memory-only). Live verifiziert (Neustart nach echter TAN-Freigabe, Session danach direkt wieder `Authentifiziert`). Erledigt.
 - **Sichere Ablage der comdirect-Zugangsdaten** (Abschnitt 4/10): umgesetzt (siehe
   `CHANGELOG.md` 0.12.0) – zweistufiger Schutz, Docker-Secrets für Client-ID/Secret,
@@ -645,7 +640,7 @@ Bearbeitung der Konten-/Depot-Stammdaten, der `own_ibans`-Ableitung (kommt weite
 aus `accounts.iban`) oder sonstiger Konfiguration – ausschließlich `categories` und
 `categorization_rules`, wie ursprünglich angefragt.
 
-## 13. Depot-Performance bereinigt um externe Ein-/Auszahlungen (umgesetzt in 0.23.0)
+## 13. Depot-Performance bereinigt um externe Ein-/Auszahlungen (umgesetzt in 0.23.0, Modell überarbeitet in 1.1.0)
 
 GitHub-Issue #12, Folge-Issue zu #2 (dort in vereinfachter Form gelöst, siehe Abschnitt 9). Bis
 0.22.0 fehlten zwei Voraussetzungen: eine Depot↔Verrechnungskonto-Verknüpfung im Datenmodell und
@@ -667,76 +662,97 @@ Verrechnungskonto – wichtig für die Klassifizierung unten. Bleibt keine Verkn
 unbekanntes Format), bleibt das Depot unverknüpft und liefert schlicht keine der neuen Kennzahlen
 (kein Fehler).
 
-### Klassifizierung von Umsätzen auf verknüpften Konten
+### Modell seit 1.1.0 (Überarbeitung nach den ersten echten Trades auf dem Verrechnungskonto)
 
-`ComdirectFetch.Domain.DepotCashflowClassifier.Classify` (reine Funktion, testbar wie
-`CategorizationLogic`) ordnet jeden Umsatz auf einem verknüpften Konto einer von vier Kategorien
-zu, **ausschließlich anhand von `transaction_type`**, nicht anhand des Kontos:
+Die Fassung aus 0.23.0 wurde mit Daten gebaut, in denen es auf dem Verrechnungskonto nur
+Dividenden gab; Käufe/Verkäufe kamen ausschließlich als Sparplan-Abbuchungen vom Girokonto vor und
+wurden deshalb pauschal als „Geld von außen" gewertet. Sobald echte Trades über das Verrechnungskonto
+vorlagen (28.09.: Kauf Munich Re −3.089,23 €, Verkauf BASF +341,87 €), zeigte sich, dass das nicht
+trägt: der Kauf wurde komplett aus vorhandenem Guthaben bezahlt (Saldo 3.801,27 → 1.053,91 €, keine
+einzige Überweisung), der Kapitaleinsatz sprang aber um 2.747,36 € und die TWR von +7,2 % auf −0,75 %.
+Neues, im ursprünglichen Wortlaut von Issue #12 („nur externe Zu-/Abflüsse zählen") liegendes Modell:
 
-- `Interest / Dividends` → Dividende (Anlageertrag, kein Kapitaleinsatz, erhöht aber die Rendite).
-- `Securities` (live bestätigt: real gelieferter Wert, nicht das dokumentierte
-  „Wertpapierabrechnung") → externe Ein-/Auszahlung, Vorzeichen entscheidet Richtung.
-- alles andere → wird ignoriert (`DepotCashflowKind.Other`).
+- **Gesamtwert = Positionen (comdirect) + Guthaben des Standard-Verrechnungskontos.** Das Guthaben
+  steckt bewusst im Wert – sonst sähen Verkäufe wie Entnahmen und Dividenden wie verschwunden aus.
+  Nur das *Standard*-Verrechnungskonto (`portfolio_settlement_accounts.is_default`) zählt; das
+  Girokonto ist zwar ebenfalls verknüpft (Sparplan), ist aber das Alltagskonto und gehört nicht zum
+  Depotwert.
+- **Kapitalbewegung ist nur Geld, das die Depot-Grenze von außen überschreitet.**
+  `DepotCashflowClassifier.Classify(transaction, isDefaultSettlementAccount)`: `Securities` auf dem
+  Verrechnungskonto = *intern* (Guthaben ↔ Wertpapiere), `Securities` auf einem allgemeinen Konto
+  (Sparplan vom Girokonto) = extern (Kauf: Einzahlung, Verkauf: Auszahlung), `Transfer` auf dem
+  Verrechnungskonto = extern (Vorzeichen), `Interest / Dividends` auf dem Verrechnungskonto = Ertrag
+  (steckt im Guthaben), auf einem allgemeinen Konto = Auszahlung des Ertrags, alles andere = ignoriert
+  (`Other`; Gründe wie zuvor: das Girokonto trägt auch Alltagsumsätze). Für `Transfer` auf dem
+  Verrechnungskonto liegt noch **kein** echter Umsatz vor – reine Annahme, nur per Unit-Test abgesichert.
+- **Bezugspunkt = erster Snapshot** (25.09.2026). Sein Gesamtwert ist das Startkapital
+  (`net_invested_capital`), danach kommen nur noch externe Bewegungen hinzu. Behebt die frühere
+  Schwäche, dass Kapital und Rendite bei einem lange bestehenden Depot nur die getrackten Käufe kannten
+  (damals ca. 4090 %): Gewinn/Verlust und Rendite gelten jetzt ausdrücklich *seit Trackingbeginn*.
+  Weiterhin gilt: nur `acquisition_value` deckt die volle Kaufhistorie ab.
+- **TWR** = tagesverkettete Rendite auf den Gesamtwert, bereinigt um die externen Bewegungen; der
+  Bezugspunkt ist der Startwert der Kette. Ohne externe Bewegungen ist sie mathematisch gleich der
+  einfachen Rendite (live gegengeprüft: beide −1,0616 %).
 
-Der letzte Punkt war ein live entdeckter Bug in der ersten Implementierung: weil das Girokonto
-(s. o.) auch als verknüpftes Konto zählt, aber gleichzeitig für sämtliche Alltagsausgaben genutzt
-wird, floss beim ursprünglichen, kontobasierten Ansatz (statt typenbasiert) jede Lebensmittel-
-Buchung, jede Kartenzahlung und jede Bargeldabhebung fälschlich als "eingesetztes Kapital" in die
-Berechnung ein (live gemessen: 8540,41 € statt korrekt 898,15 € Netto-Kapitaleinsatz – der
-korrekte Wert wurde direkt per SQL gegen die echten `Securities`-Buchungen gegengeprüft). Behoben
-durch die Beschränkung auf `Securities`/`Interest / Dividends`, unabhängig vom Konto.
+### Live entdeckt: Positionen erscheinen bei Ausführung, das Guthaben später (und die Valuta noch später)
 
-### Zwei Berechnungsmethoden (`ComdirectFetch.Domain.DepotPerformanceCalculator`)
+Zwei zunächst plausible Annahmen wurden von den echten Daten widerlegt – eine davon von mir selbst
+falsch abgeleitet, weil eine Abfrage die Umlaute im Positionsnamen („Münchener Rückvers.") verfehlte
+und ich daraus schloss, die Aktien seien noch nicht im Depot:
 
-- **Netto-Kapitaleinsatz-Methode**: `aktueller Depotwert + erhaltene Dividenden − Netto-Kapitaleinsatz`.
-  Einfach, aber ohne Zeitgewichtung.
-- **Time-Weighted Return (tagesverkettet)**: Snapshots werden auf einen Wert pro Kalendertag
-  konsolidiert (`ConsolidateToDailyLastValue`, gleiches Prinzip wie die Retention-Konsolidierung
-  in Abschnitt 11, nur als reine Funktion), für jeden Tagesübergang wird die Rendite um die in
-  diesem Zeitraum aufgetretenen Cashflows bereinigt und die Tagesrenditen geometrisch verkettet
-  (`Π(1+r_Tag) − 1`). Dividenden zählen dabei wie eine „Einzahlung ohne Kapitaleinsatz" (sie
-  erhöhen den Depotwert, ohne dass `total_value` das Cash auf dem Verrechnungskonto selbst erfasst).
+- **Nicht zur Valuta.** Ausführung Mo 28.09. morgens; die Munich-Re-Position stand ab dem Snapshot von
+  28.09. 06:44 UTC im Depot, der gebuchte Saldo sank erst am 29.09. gegen 03:45, die Valuta ist der
+  30.09. Ein „in Lieferung"-Zuschlag zum Gesamtwert (Spalte `securities_in_transit` aus Migration 0015,
+  nie veröffentlicht, aber auf der Live-DB schon gelaufen – deshalb ein `DROP COLUMN` in 0016 statt
+  einer nachträglichen Änderung, Migrationen sind append-only) zählte die Aktien doppelt (Gesamtwert
+  41.317 statt 38.228 €).
+  Deshalb Buchungstag (= Ausführungstag) als Zeitbezug für Bewegungen, nicht die Valuta – abweichend
+  von der zunächst gewählten Variante „Valuta statt Buchungsdatum", deren Voraussetzung sich als falsch
+  erwies.
+- **Guthaben aus Buchungen zurückgerechnet statt aus Saldo-Stichproben.** Das Guthaben je Tag ist der
+  aktuelle gebuchte Saldo minus alle Umsätze des Verrechnungskontos *nach* dem Tag
+  (`DepotPerformanceCalculator`, Ledger-Rückrechnung; am Realbestand exakt: 1.053,91 + 2.747,36 =
+  3.801,27 € = am 25.09. gemessener Saldo). Damit liegen Positionen und Guthaben am Ausführungstag
+  zusammen; Restunschärfe nur innerhalb des Ausführungstags (Buchungstag ist tagesgenau,
+  Snapshots stündlich, Tageswechsel in UTC). `available_amount` taugte nicht: es sinkt schon bei der
+  Order-Erteilung (So abends), Tage vor der Ausführung.
+- Der Gesamtwert springt dadurch nicht mehr um den Kaufbetrag; ein Kauf schlägt nur mit den echten
+  Kosten zu Buche (hier ca. 27 € Gebühren).
 
-Beide Kennzahlen werden bei jedem neuen `portfolio_snapshots`-Eintrag komplett neu aus der
-kompletten Historie berechnet (nicht inkrementell fortgeschrieben – bei der aktuellen Datenmenge
-vernachlässigbar teuer, deutlich weniger fehleranfällig) und dort nachgetragen
-(`db/migrations/0014_portfolio_snapshots_add_performance_columns.sql`: `net_invested_capital`,
-`dividends_received`, `time_weighted_return_pct`, alle `NULL` für Snapshots vor 0.23.0 bzw. ohne
-auflösbare Verknüpfung – kein rückwirkendes Backfill, gleiches Opt-in-Muster wie
-`TokenEncryptionKeyBase64`/`CredentialKeyFilePath`).
+### Berechnung und Speicherung
 
-### Wichtige Einschränkung (live entdeckt, nicht vorher absehbar)
+`ComdirectFetch.Domain.DepotPerformanceCalculator.Calculate` (reine Funktion, unit-getestet) liefert für
+*jeden* Snapshot Guthaben, Kapital, kumulierte Dividenden und TWR. `PortfolioFetchService` ruft sie nach
+jedem Snapshot für die komplette Historie auf und schreibt nur die Zeilen zurück, deren gespeicherte
+Werte abweichen (`portfolio_snapshots.settlement_cash`, `net_invested_capital`, `dividends_received`,
+`time_weighted_return_pct`; Migrationen 0014–0016). Dadurch ist die Berechnung selbstheilend (ein später
+auftauchender Umsatz korrigiert auch die davorliegenden Zeilen) und der erste Lauf nach dieser
+Modelländerung füllte die Historie ab dem Bezugspunkt automatisch neu auf (113 Snapshots).
 
-Die Netto-Kapitaleinsatz-Methode kennt nur Kapitalbewegungen, die seit Beginn des Trackings
-(0.23.0) stattfanden. Bei einem bereits lange bestehenden Depot mit erheblichem Wert vor
-Trackingbeginn – wie beim hier verifizierten echten Depot (Gesamtwert ca. 37.000 €, aber nur
-898,15 € an seit 0.23.0 getrackten Käufen) – ergibt das eine massiv überzeichnete Rendite (live
-gemessen: ca. 4090 % statt eines sinnvollen Werts). Die absolute Gewinn/Verlust-Zahl dieser
-Methode ist aus demselben Grund ebenfalls nicht aussagekräftig. Die Time-Weighted-Return-Kennzahl
-ist davon **nicht** betroffen, da sie nur Teilperioden-Renditen innerhalb des Tracking-Zeitraums
-bewertet, keine Gesamtkapitalbasis voraussetzt – sie ist deshalb schon jetzt sinnvoll nutzbar. Die
-unverändert weiterhin vorhandene, auf `acquisition_value` basierende einfache Methode (Abschnitt 9)
-bleibt die einzige, die die volle historische Kaufhistorie abdeckt. Alle drei Panels sind im
-Dashboard entsprechend beschriftet, nicht stillschweigend nebeneinandergestellt.
+Bewusst nicht gelöst: Zwischenstände am Tag der Ausführung (Buchungstag statt Uhrzeit, siehe oben);
+Verkauf-Erlöse, die am Ausführungstag schon aus den Positionen verschwunden, aber noch nicht im Saldo
+sind, sind durch dieselbe Rückrechnung abgedeckt; mehrere Depots bekommen keine gemeinsame Prozent-
+Kennzahl (Prozentwerte lassen sich nicht summieren).
 
 ### Ein live entdeckter Dapper-Gotcha
 
-`PortfolioSnapshotRepository.GetValuationHistoryAsync` materialisierte ursprünglich in einen
-positional `record PortfolioValuationPoint(DateTimeOffset Timestamp, decimal TotalValue)`. Das
-schlug live fehl ("A parameterless default constructor or one matching signature ... is
-required"): Dapper materialisiert Records über deren Primärkonstruktor und verlangt dafür exakte
-CLR-Typ-Übereinstimmung mit der SQL-Spalte (hier `DATETIME` → `DateTime`) – die sonst überall in
-diesem Projekt klaglos funktionierende automatische `DateTime`-zu-`DateTimeOffset`-Konvertierung
-greift nur beim property-setter-basierten Materialisieren normaler Klassen. Behoben durch
-Umstellung auf eine Klasse mit settable Properties (gleiches Muster wie `Transaction`,
+`PortfolioSnapshotRepository` materialisierte ursprünglich in einen positional
+`record PortfolioValuationPoint(DateTimeOffset Timestamp, decimal TotalValue)`. Das schlug live fehl
+("A parameterless default constructor or one matching signature ... is required"): Dapper
+materialisiert Records über deren Primärkonstruktor und verlangt dafür exakte CLR-Typ-Übereinstimmung
+mit der SQL-Spalte (hier `DATETIME` → `DateTime`) – die sonst überall in diesem Projekt klaglos
+funktionierende automatische `DateTime`-zu-`DateTimeOffset`-Konvertierung greift nur beim
+property-setter-basierten Materialisieren normaler Klassen. Behoben durch Umstellung auf eine Klasse mit
+settable Properties (heute `PortfolioSnapshotPerformanceRow`, gleiches Muster wie `Transaction`,
 `SyncLogEntry` etc.). Ergänzt die bereits dokumentierten Dapper-Eigenheiten in `CLAUDE.md`
 (Enum-Parameter).
 
 ### Dashboard
 
-`grafana/dashboards/depot-performance.json` zeigt jetzt beide Sichten nebeneinander: die
-bestehenden `acquisition_value`-basierten Panels oben, die neuen Netto-Kapitaleinsatz-/TWR-Panels
-unten, mit expliziten Beschreibungen zur jeweiligen Aussagekraft/Einschränkung.
+`grafana/dashboards/depot-performance.json` zeigt beide Sichten nebeneinander: die bestehenden
+`acquisition_value`-basierten Panels oben (volle Kaufhistorie, ohne Guthaben), unten Gesamtwert vs.
+Kapital, Gewinn/Verlust und Rendite seit Trackingbeginn sowie die TWR, jeweils mit Beschreibungen zu
+Aussagekraft und Einschränkung.
 
 ## 14. Security-Review und Härtung (umgesetzt in 1.0.0, Breaking Change)
 

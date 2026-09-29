@@ -103,8 +103,8 @@ Five projects under `src/`, referencing each other in one direction only
   type match there, unlike the property-setter-based materialization used for plain classes,
   which already tolerates `DateTime`→`DateTimeOffset` everywhere else in this codebase. Failed
   live with "A parameterless default constructor or one matching signature ... is required" for
-  `PortfolioValuationPoint` (Issue #12) until changed from a `record` to a class with settable
-  properties (see `PortfolioSnapshotRepository`).
+  `PortfolioValuationPoint` (Issue #12, since replaced by `PortfolioSnapshotPerformanceRow`) until
+  changed from a `record` to a class with settable properties (see `PortfolioSnapshotRepository`).
 - **`ComdirectFetch.Worker`** — the entry point (`Program.cs`, ASP.NET Core minimal hosting,
   everything registered as singletons since repositories are stateless). Background
   services: `TokenRefreshBackgroundService` (keeps the session alive via refresh, runs far
@@ -294,33 +294,42 @@ Do this as part of the change itself, not only when the user asks for it.
   `PUT /admin/rules/api/transactions/{id}/category` from v0.21.0. The two admin pages now link
   to each other. Shared CSS was extracted from `index.html`'s inline `<style>` into
   `wwwroot/admin/rules/admin.css`, referenced by both pages, to avoid duplicating it.
-- Depot-performance cleaned of external deposits/withdrawals (v0.23.0, `docs/konzept.md` §13,
-  Issue #12, follow-up to #2): `defaultSettlementAccountId`/`settlementAccountIds` from the
-  Depot API are now captured (`DepotEntry` in `BrokerageModels.cs`) and resolved against
-  `accounts.comdirect_account_id` — live-verified to be the same UUID format, not a plain account
-  number as the Swagger wording suggested; also live-confirmed the checking account (Girokonto)
-  is itself registered as a non-default settlement account, since savings-plan buys settle
-  directly against it. New n:m table `portfolio_settlement_accounts`
-  (`db/migrations/0013_...sql`). `ComdirectFetch.Domain.DepotCashflowClassifier`/
-  `DepotPerformanceCalculator` (pure, unit-tested like `CategorizationLogic`) classify each
-  transaction on a linked account **by `transaction_type` alone** (`Securities` → capital
-  in/out, `Interest / Dividends` → investment return, anything else → ignored) — deliberately
-  not by account, because a shared account like the Girokonto also carries ordinary spending; an
-  earlier account-based version live-miscounted everyday purchases as capital invested (8540.41€
-  vs. the correct 898.15€, caught by cross-checking against a direct SQL sum before release).
-  Two methods computed fresh from full history on every new `portfolio_snapshots` row and
-  persisted there (`db/migrations/0014_...sql`: `net_invested_capital`, `dividends_received`,
-  `time_weighted_return_pct`, all `NULL` pre-v0.23.0 or without a resolvable link — no backfill):
-  a simple net-invested-capital P&L, and a daily-chained Time-Weighted Return
-  (`DepotPerformanceCalculator.ConsolidateToDailyLastValue` + `CalculateTimeWeightedReturn`).
-  **Known limitation, found live, not guessable in advance**: net-invested-capital P&L/return-%
-  only account for capital movements since tracking began (v0.23.0) — for a depot with
-  substantial pre-existing value, this yields a wildly overstated return (live: ~4090% on a
-  real depot worth ~37k€ but only 898.15€ tracked-since-start). TWR is unaffected (it only
-  evaluates sub-period returns within the tracked window, no total-capital baseline needed).
-  The original `acquisition_value`-based panel (§9, v0.10.0) remains the only one covering full
-  purchase history. `grafana/dashboards/depot-performance.json` now shows both views, each
-  panel's description stating its own scope/limitation explicitly.
+- Depot-performance cleaned of external deposits/withdrawals (v0.23.0, reworked in v1.1.0,
+  `docs/konzept.md` §13, Issue #12): `defaultSettlementAccountId`/`settlementAccountIds` from the Depot
+  API are captured (`DepotEntry`) and resolved against `accounts.comdirect_account_id` — live-verified
+  to be the same UUID format, not a plain account number as the Swagger wording suggested; the
+  Girokonto is itself a non-default settlement account (savings-plan buys settle against it). n:m table
+  `portfolio_settlement_accounts` (`is_default`). **Model (v1.1.0)**: total value = positions +
+  cash of the *default* settlement account only; only money crossing the depot boundary is a capital
+  flow. `DepotCashflowClassifier.Classify(tx, isDefaultSettlementAccount)`: `Securities` on the
+  Verrechnungskonto = internal (cash ↔ securities), on the Girokonto = external (savings plan),
+  `Transfer` on the Verrechnungskonto = external (sign; **assumption, no real example yet**),
+  `Interest / Dividends` on the Verrechnungskonto = return (already in the cash), everything else
+  ignored — never classify by account alone, the Girokonto also carries everyday spending (an early
+  account-based version live-counted 8540.41€ instead of the correct 898.15€). The v0.23.0 model
+  treated every `Securities` booking as external because only savings-plan buys existed then; the
+  first real trades on the Verrechnungskonto (Munich Re buy −3089.23€, BASF sale +341.87€, paid
+  entirely from 3801.27€ of existing cash, no transfer) disproved that. `DepotPerformanceCalculator.
+  Calculate` (pure, unit-tested) returns per snapshot: cash, capital (= total value of the *first
+  snapshot* as starting capital + external flows since — fixes the old ~4090% overstatement for a
+  depot with pre-existing value, so P&L/return now mean "since tracking start"), cumulative dividends,
+  and a daily-chained TWR starting at the baseline snapshot (equals the simple return when there are
+  no external flows — a useful live cross-check). **Timing, found live**: comdirect shows an executed
+  order in the *positions* immediately (Munich Re: snapshot 28.09. 06:44 UTC), the *booked balance*
+  drops ~a day later (29.09. ~03:45), the value date is later still (30.09.). So flows use the
+  **booking date** (= execution day), not the value date, and the cash per day is **reconstructed
+  from the latest balance minus all later bookings** (exact on real data: 1053.91 + 2747.36 = 3801.27)
+  instead of read from balance samples; `available_amount` is unusable (drops at order placement,
+  days before execution). An intermediate "securities in transit" column double-counted the shares
+  (41,317€ vs 38,228€) — reverted by migration 0016 (0015 had already run on the live DB, migrations
+  are append-only). Worth knowing: an earlier claim that the shares weren't in the depot yet came from
+  a `LIKE '%MUENCH%'` query that missed the umlaut name "Münchener Rückvers." — always check names with
+  umlauts before concluding something is absent. `PortfolioFetchService.RecomputePerformanceAsync`
+  recomputes *all* snapshots from the baseline on every run and writes back only rows whose stored
+  values differ (`settlement_cash`, `net_invested_capital`, `dividends_received`,
+  `time_weighted_return_pct`; migrations 0014–0016), so late-arriving bookings self-heal and a model
+  change backfills history automatically. `grafana/dashboards/depot-performance.json` shows the old
+  `acquisition_value` view (full purchase history, no cash) above the new since-tracking-start view.
 - **Security hardening (v1.0.0, breaking change)**: a manual security review found `/auth/*`,
   `/debug/*` and `POST /admin/credentials` relied on an unverified "host-local only" assumption —
   live-disproven, `docker-compose.yml`'s `ports: "8750:8080"` binds all interfaces and the host

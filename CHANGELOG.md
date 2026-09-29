@@ -4,6 +4,42 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 1.1.0 – Depot-Performance: nur externe Ein-/Auszahlungen, Guthaben im Gesamtwert (Issue #12, Nachbesserung)
+
+Die Auswertung aus 0.23.0 wurde mit Daten gebaut, in denen es auf dem Verrechnungskonto nur Dividenden
+gab, und wertete deshalb jeden `Securities`-Umsatz als Geld von außen. Die ersten echten Trades über das
+Verrechnungskonto (28.09.: Kauf Munich Re −3.089,23 €, Verkauf BASF +341,87 €) widerlegten das: der Kauf
+lief komplett aus vorhandenem Guthaben (3.801,27 → 1.053,91 €, keine Überweisung), der Kapitaleinsatz
+sprang trotzdem um 2.747,36 € und die TWR von +7,2 % auf −0,75 %. Neues Modell (Details
+`docs/konzept.md` Abschnitt 13):
+
+- **Gesamtwert = Positionen + Guthaben des Standard-Verrechnungskontos**; nur Geld von außen ist eine
+  Kapitalbewegung. `DepotCashflowClassifier.Classify` bekommt dafür `isDefaultSettlementAccount`
+  (`Securities` auf dem Verrechnungskonto = intern, auf dem Girokonto = extern; `Transfer` auf dem
+  Verrechnungskonto = extern; Dividenden = Ertrag). Die neue `DepotPerformanceCalculator.Calculate`
+  ersetzt die drei alten Funktionen und liefert je Snapshot Guthaben, Kapital, Dividenden und TWR.
+- **Startkapital statt Teilsumme**: der erste Snapshot (25.09.) ist der Bezugspunkt, sein Gesamtwert das
+  Startkapital. Behebt die überzeichnete Rendite von ca. 4090 % bei einem lange bestehenden Depot;
+  Gewinn/Verlust und Rendite gelten jetzt ausdrücklich *seit Trackingbeginn*.
+- **Guthaben aus Buchungen zurückgerechnet** (aktueller Saldo minus spätere Umsätze) statt aus
+  Saldo-Stichproben. Live belegt: comdirect zeigt die ausgeführte Order sofort in den Positionen
+  (28.09. 06:44 UTC), der gebuchte Saldo folgt erst am 29.09. nachts, die Valuta ist der 30.09. Bewegungen
+  werden deshalb zum **Buchungstag** angesetzt (nicht zur Valuta, wie zunächst gewählt – die
+  Voraussetzung dieser Variante war falsch); ein zwischenzeitlicher „in Lieferung"-Ansatz hatte die Aktien
+  doppelt gezählt (41.317 statt 38.228 €). Eine erste Aussage, die Aktien seien noch nicht im Depot,
+  beruhte auf einer Abfrage, die Umlaute im Positionsnamen verfehlte.
+- **Selbstheilend**: jeder Lauf berechnet alle Snapshots ab dem Bezugspunkt neu und schreibt nur
+  abweichende Zeilen zurück (der erste Lauf füllte 113 Snapshots rückwirkend).
+- Migrationen `0015` (`settlement_cash`, zusätzlich `securities_in_transit`) und `0016` (entfernt
+  `securities_in_transit` wieder – 0015 war schon auf der Live-DB gelaufen, Migrationen sind append-only).
+- Dashboard `depot-performance.json`: Gesamtwert (Positionen + Guthaben) vs. Kapital, Gewinn/Verlust und
+  Rendite seit Trackingbeginn, TWR.
+
+Live verifiziert (29.09.): Gesamtwert 38.228,38 € (37.174,47 Positionen + 1.053,91 Guthaben), Gewinn
+−410,17 €, Rendite und TWR identisch −1,0616 % (ohne externe Bewegungen müssen sie übereinstimmen); um den
+Munich-Re-Kauf kein Sprung mehr. Offen: eine echte externe Überweisung aufs/vom Verrechnungskonto und ein
+Sparplan-Kauf im Trackingzeitraum liegen noch nicht vor – beides nur per Unit-Test abgesichert.
+
 ## 1.0.1 – IBAN-Logging maskiert (Datenschutz-Review)
 
 `BalanceFetchService` loggte seit v0.23.1 volle IBANs bei jedem Saldenabruf. Neue, reine

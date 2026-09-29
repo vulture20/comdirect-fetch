@@ -31,13 +31,20 @@ public sealed class PortfolioSettlementAccountRepository(IDbConnectionFactory co
         }
     }
 
-    public async Task<IReadOnlyList<long>> GetAccountIdsForPortfolioAsync(
+    public async Task<IReadOnlyList<PortfolioSettlementAccountLink>> GetLinksAsync(
         long portfolioId, CancellationToken cancellationToken = default)
     {
         using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
-        var rows = await connection.QueryAsync<long>(
-            "SELECT account_id FROM portfolio_settlement_accounts WHERE portfolio_id = @PortfolioId;",
+        var rows = await connection.QueryAsync<PortfolioSettlementAccountLink>(
+            "SELECT account_id AS AccountId, is_default AS IsDefault FROM portfolio_settlement_accounts WHERE portfolio_id = @PortfolioId;",
             new { PortfolioId = portfolioId });
         return rows.AsList();
     }
+}
+
+/// <summary>Ein verknüpftes Konto eines Depots; IsDefault markiert das Standard-Verrechnungskonto (defaultSettlementAccountId).</summary>
+public sealed class PortfolioSettlementAccountLink
+{
+    public long AccountId { get; set; }
+    public bool IsDefault { get; set; }
 }
