@@ -25,13 +25,12 @@ public sealed record DepotPerformancePoint(
 /// (<see cref="DepotCashflowClassifier"/>). Bezugspunkt ist der erste Snapshot: sein Gesamtwert gilt als
 /// Startkapital, danach kommen nur noch externe Bewegungen hinzu. Dadurch ist der Gewinn auch bei einem
 /// Depot mit erheblichem Wert vor Trackingbeginn aussagekräftig (frühere Fassung: Kapitaleinsatz nur aus
-/// den getrackten Käufen, live ca. 4000 % Rendite bei einem Depot von ca. 40.000 €).
+/// den getrackten Käufen, live eine um ein Vielfaches überzeichnete Rendite).
 ///
 /// Das Guthaben je Tag wird aus dem aktuellen Saldo und den Buchungen zurückgerechnet (Saldo minus alle
 /// Umsätze nach dem Tag) statt aus einzelnen Saldo-Stichproben zu lesen. Grund, live belegt: comdirect
-/// zeigt eine ausgeführte Order sofort in den Depot-Positionen (Wertpapier A: Tag T morgens), der gebuchte
-/// Saldo sinkt aber erst rund einen Tag später (Tag T+1 nachts) und die Valuta liegt nochmal später
-/// (Tag T+2). Mit dem Buchungstag als Bezug (= Ausführungstag) stimmen Positionen und Guthaben zusammen.
+/// zeigt eine ausgeführte Order sofort in den Depot-Positionen, der gebuchte Saldo sinkt aber erst
+/// rund einen Tag später und die Valuta liegt nochmal später. Mit dem Buchungstag als Bezug (= Ausführungstag) stimmen Positionen und Guthaben zusammen.
 /// Bewegungen werden deshalb ebenfalls zum Buchungstag angesetzt, nicht zur Valuta.
 /// </summary>
 public static class DepotPerformanceCalculator

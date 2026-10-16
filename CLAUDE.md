@@ -273,7 +273,7 @@ Do this as part of the change itself, not only when the user asks for it.
   "Bearbeiten" button per rule row that switches that row into an edit mode covering all fields
   (pattern, matchField, categoryId, priority, comment) with explicit Speichern/Abbrechen buttons
   — calls the same `PUT /admin/rules/api/rules/{id}` that already existed since v0.16.0 but was
-  previously only reachable outside the UI (e.g. via `curl`, as used for the Sparplan-Fonds/Sparplan-ETC
+  previously only reachable outside the UI (e.g. via `curl`, as used for a savings-plan
   pattern fix). No backend change; frontend-only (`wwwroot/admin/rules/index.html`). v0.21.0
   added `PUT /admin/rules/api/transactions/{id}/category` (body `{ categoryId }`) so a single
   uncategorized transaction can be assigned a category directly without a rule — calls the
@@ -306,24 +306,24 @@ Do this as part of the change itself, not only when the user asks for it.
   `Transfer` on the Verrechnungskonto = external (sign; **assumption, no real example yet**),
   `Interest / Dividends` on the Verrechnungskonto = return (already in the cash), everything else
   ignored — never classify by account alone, the Girokonto also carries everyday spending (an early
-  account-based version live-counted 8500.00€ instead of the correct 900.00€). The v0.23.0 model
+  account-based version live-counted roughly ten times the correct capital). The v0.23.0 model
   treated every `Securities` booking as external because only savings-plan buys existed then; the
-  first real trades on the Verrechnungskonto (Wertpapier A buy −3000.00€, Wertpapier B sale +300.00€, paid
-  entirely from 4000.00€ of existing cash, no transfer) disproved that. `DepotPerformanceCalculator.
+  first real trades on the Verrechnungskonto (one buy, one sale, paid
+  entirely from existing cash, no transfer) disproved that. `DepotPerformanceCalculator.
   Calculate` (pure, unit-tested) returns per snapshot: cash, capital (= total value of the *first
-  snapshot* as starting capital + external flows since — fixes the old ~4000% overstatement for a
+  snapshot* as starting capital + external flows since — fixes the old many-fold overstatement for a
   depot with pre-existing value, so P&L/return now mean "since tracking start"), cumulative dividends,
   and a daily-chained TWR starting at the baseline snapshot (equals the simple return when there are
   no external flows — a useful live cross-check). **Timing, found live**: comdirect shows an executed
-  order in the *positions* immediately (Wertpapier A: snapshot Tag T früh morgens), the *booked balance*
-  drops ~a day later (Tag T+1 nachts), the value date is later still (Tag T+2). So flows use the
+  order in the *positions* immediately (same day), the *booked balance*
+  drops ~a day later, the value date is later still. So flows use the
   **booking date** (= execution day), not the value date, and the cash per day is **reconstructed
-  from the latest balance minus all later bookings** (exact on real data: 1300.00 + 2700.00 = 4000.00)
+  from the latest balance minus all later bookings** (matched the real data exactly)
   instead of read from balance samples; `available_amount` is unusable (drops at order placement,
   days before execution). An intermediate "securities in transit" column double-counted the shares
-  (43,000€ vs 40,000€) — reverted by migration 0016 (0015 had already run on the live DB, migrations
+  (total value too high by the purchase amount) — reverted by migration 0016 (0015 had already run on the live DB, migrations
   are append-only). Worth knowing: an earlier claim that the shares weren't in the depot yet came from
-  a `LIKE '%BEISPIEL%'` query that missed the umlaut name "Beispiel-Rückvers." — always check names with
+  a `LIKE` query with `UE` that missed the umlaut `Ü` in the position name — always check names with
   umlauts before concluding something is absent. `PortfolioFetchService.RecomputePerformanceAsync`
   recomputes *all* snapshots from the baseline on every run and writes back only rows whose stored
   values differ (`settlement_cash`, `net_invested_capital`, `dividends_received`,

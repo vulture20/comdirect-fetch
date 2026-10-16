@@ -8,9 +8,9 @@ Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dat
 
 Die Auswertung aus 0.23.0 wurde mit Daten gebaut, in denen es auf dem Verrechnungskonto nur Dividenden
 gab, und wertete deshalb jeden `Securities`-Umsatz als Geld von außen. Die ersten echten Trades über das
-Verrechnungskonto (Tag T: Kauf Wertpapier A −3.000,00 €, Verkauf Wertpapier B +300,00 €) widerlegten das: der Kauf
-lief komplett aus vorhandenem Guthaben (4.000,00 → 1.300,00 €, keine Überweisung), der Kapitaleinsatz
-sprang trotzdem um 2.700,00 € und die TWR von +7,0 % auf −0,70 %. Neues Modell (Details
+Verrechnungskonto (ein Kauf und ein Verkauf) widerlegten das: der Kauf lief komplett aus vorhandenem
+Guthaben (keine Überweisung), der Kapitaleinsatz sprang trotzdem um den Kaufbetrag und die TWR kippte
+sichtbar ins Negative. Neues Modell (Details
 `docs/konzept.md` Abschnitt 13):
 
 - **Gesamtwert = Positionen + Guthaben des Standard-Verrechnungskontos**; nur Geld von außen ist eine
@@ -19,14 +19,14 @@ sprang trotzdem um 2.700,00 € und die TWR von +7,0 % auf −0,70 %. Neues Mode
   Verrechnungskonto = extern; Dividenden = Ertrag). Die neue `DepotPerformanceCalculator.Calculate`
   ersetzt die drei alten Funktionen und liefert je Snapshot Guthaben, Kapital, Dividenden und TWR.
 - **Startkapital statt Teilsumme**: der erste Snapshot (Trackingbeginn) ist der Bezugspunkt, sein Gesamtwert das
-  Startkapital. Behebt die überzeichnete Rendite von ca. 4000 % bei einem lange bestehenden Depot;
+  Startkapital. Behebt die um ein Vielfaches überzeichnete Rendite bei einem lange bestehenden Depot;
   Gewinn/Verlust und Rendite gelten jetzt ausdrücklich *seit Trackingbeginn*.
 - **Guthaben aus Buchungen zurückgerechnet** (aktueller Saldo minus spätere Umsätze) statt aus
   Saldo-Stichproben. Live belegt: comdirect zeigt die ausgeführte Order sofort in den Positionen
-  (Tag T früh morgens), der gebuchte Saldo folgt erst am Tag T+1 nachts, die Valuta ist der Tag T+2 Bewegungen
+  (noch am Ausführungstag), der gebuchte Saldo folgt rund einen Tag später, die Valuta noch später. Bewegungen
   werden deshalb zum **Buchungstag** angesetzt (nicht zur Valuta, wie zunächst gewählt – die
   Voraussetzung dieser Variante war falsch); ein zwischenzeitlicher „in Lieferung"-Ansatz hatte die Aktien
-  doppelt gezählt (43.000 statt 40.000 €). Eine erste Aussage, die Aktien seien noch nicht im Depot,
+  doppelt gezählt (Gesamtwert um den Kaufbetrag zu hoch). Eine erste Aussage, die Aktien seien noch nicht im Depot,
   beruhte auf einer Abfrage, die Umlaute im Positionsnamen verfehlte.
 - **Selbstheilend**: jeder Lauf berechnet alle Snapshots ab dem Bezugspunkt neu und schreibt nur
   abweichende Zeilen zurück (der erste Lauf füllte alle Snapshots rückwirkend).
@@ -35,9 +35,8 @@ sprang trotzdem um 2.700,00 € und die TWR von +7,0 % auf −0,70 %. Neues Mode
 - Dashboard `depot-performance.json`: Gesamtwert (Positionen + Guthaben) vs. Kapital, Gewinn/Verlust und
   Rendite seit Trackingbeginn, TWR.
 
-Live verifiziert (Tag T+1): Gesamtwert 40.000,00 € (38.700,00 Positionen + 1.300,00 Guthaben), Gewinn
-−400,00 €, Rendite und TWR identisch −1,00 % (ohne externe Bewegungen müssen sie übereinstimmen); um den
-Beispiel-Kauf kein Sprung mehr. Offen: eine echte externe Überweisung aufs/vom Verrechnungskonto und ein
+Live verifiziert: Gesamtwert = Positionen + Guthaben stimmt, Rendite und TWR sind identisch (ohne externe
+Bewegungen müssen sie übereinstimmen); um den Kauf herum kein Sprung mehr. Offen: eine echte externe Überweisung aufs/vom Verrechnungskonto und ein
 Sparplan-Kauf im Trackingzeitraum liegen noch nicht vor – beides nur per Unit-Test abgesichert.
 
 ## 1.0.1 – IBAN-Logging maskiert (Datenschutz-Review)
@@ -100,12 +99,12 @@ DepotPerformanceCalculator`/`DepotCashflowClassifier` (unit-getestet): eine einf
 Netto-Kapitaleinsatz-Methode und eine präzisere, tagesverkettete Time-Weighted Return.
 Klassifizierung bewusst nur anhand `transaction_type` (`Securities`/`Interest / Dividends`), nicht
 anhand des Kontos – ein erster, kontobasierter Ansatz zählte live fälschlich Alltagsausgaben auf
-dem (auch als Verrechnungskonto registrierten) Girokonto als Kapitaleinsatz mit (8.500,00 € statt
-korrekt 900,00 €), gefunden und korrigiert vor dem Release. Zwei neue Dashboard-Panels-Reihen in
+dem (auch als Verrechnungskonto registrierten) Girokonto als Kapitaleinsatz mit (rund das Zehnfache des
+korrekten Werts), gefunden und korrigiert vor dem Release. Zwei neue Dashboard-Panels-Reihen in
 `grafana/dashboards/depot-performance.json`, klar von der bestehenden, weiterhin unveränderten
 `acquisition_value`-basierten Ansicht abgegrenzt. **Wichtige Einschränkung**: Netto-Kapitaleinsatz-
 Rendite ist nur für Kapitalbewegungen seit Trackingbeginn aussagekräftig – bei einem bereits lange
-bestehenden Depot ergibt das aktuell eine stark überzeichnete Zahl (live: ca. 4000 %); die
+bestehenden Depot ergibt das aktuell eine stark überzeichnete Zahl (live: ein Vielfaches); die
 Time-Weighted-Return-Kennzahl ist davon nicht betroffen. Details siehe `docs/konzept.md`
 Abschnitt 13.
 
@@ -437,8 +436,7 @@ Umsätze zum Verifizieren (die Kategorie „Ordergebühren" hat in den Live-Date
 Treffer). Statt das ungetestet zu bauen, zeigt dieses Dashboard den unrealisierten Gewinn/
 Verlust der aktuell gehaltenen Positionen (`total_value − acquisition_value`) – enthält
 **keine** realisierten Gewinne aus bereits verkauften Positionen und **keine** externen
-Ein-/Auszahlungen. Mit echten Daten verifiziert (5 Snapshots, aktuell −900,00 € / −2,00 %
-unrealisiert). Volle Cashflow-Bereinigung als Folge-Issue vorgemerkt.
+Ein-/Auszahlungen. Mit echten Daten verifiziert. Volle Cashflow-Bereinigung als Folge-Issue vorgemerkt.
 
 ## 0.9.0 – Phase 3 der Auswertungen: Cashflow & Kostenübersicht
 

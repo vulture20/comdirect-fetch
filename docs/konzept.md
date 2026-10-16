@@ -667,9 +667,9 @@ unbekanntes Format), bleibt das Depot unverknüpft und liefert schlicht keine de
 Die Fassung aus 0.23.0 wurde mit Daten gebaut, in denen es auf dem Verrechnungskonto nur
 Dividenden gab; Käufe/Verkäufe kamen ausschließlich als Sparplan-Abbuchungen vom Girokonto vor und
 wurden deshalb pauschal als „Geld von außen" gewertet. Sobald echte Trades über das Verrechnungskonto
-vorlagen (Tag T: Kauf Wertpapier A −3.000,00 €, Verkauf Wertpapier B +300,00 €), zeigte sich, dass das nicht
-trägt: der Kauf wurde komplett aus vorhandenem Guthaben bezahlt (Saldo 4.000,00 → 1.300,00 €, keine
-einzige Überweisung), der Kapitaleinsatz sprang aber um 2.700,00 € und die TWR von +7,0 % auf −0,70 %.
+vorlagen (ein Kauf, ein Verkauf), zeigte sich, dass das nicht trägt: der Kauf wurde komplett aus
+vorhandenem Guthaben bezahlt (keine einzige Überweisung), der Kapitaleinsatz sprang aber um den
+Kaufbetrag und die TWR kippte sichtbar ins Negative.
 Neues, im ursprünglichen Wortlaut von Issue #12 („nur externe Zu-/Abflüsse zählen") liegendes Modell:
 
 - **Gesamtwert = Positionen (comdirect) + Guthaben des Standard-Verrechnungskontos.** Das Guthaben
@@ -688,34 +688,33 @@ Neues, im ursprünglichen Wortlaut von Issue #12 („nur externe Zu-/Abflüsse z
 - **Bezugspunkt = erster Snapshot** (Trackingbeginn). Sein Gesamtwert ist das Startkapital
   (`net_invested_capital`), danach kommen nur noch externe Bewegungen hinzu. Behebt die frühere
   Schwäche, dass Kapital und Rendite bei einem lange bestehenden Depot nur die getrackten Käufe kannten
-  (damals ca. 4000 %): Gewinn/Verlust und Rendite gelten jetzt ausdrücklich *seit Trackingbeginn*.
+  (damals um ein Vielfaches überzeichnet): Gewinn/Verlust und Rendite gelten jetzt ausdrücklich *seit Trackingbeginn*.
   Weiterhin gilt: nur `acquisition_value` deckt die volle Kaufhistorie ab.
 - **TWR** = tagesverkettete Rendite auf den Gesamtwert, bereinigt um die externen Bewegungen; der
   Bezugspunkt ist der Startwert der Kette. Ohne externe Bewegungen ist sie mathematisch gleich der
-  einfachen Rendite (live gegengeprüft: beide −1,00 %).
+  einfachen Rendite (live gegengeprüft: beide identisch).
 
 ### Live entdeckt: Positionen erscheinen bei Ausführung, das Guthaben später (und die Valuta noch später)
 
 Zwei zunächst plausible Annahmen wurden von den echten Daten widerlegt – eine davon von mir selbst
-falsch abgeleitet, weil eine Abfrage die Umlaute im Positionsnamen („Beispiel-Rückvers.") verfehlte
+falsch abgeleitet, weil eine Abfrage die Umlaute im Positionsnamen (`UE` statt `Ü`) verfehlte
 und ich daraus schloss, die Aktien seien noch nicht im Depot:
 
-- **Nicht zur Valuta.** Ausführung Mo Tag T morgens; die Beispiel-Position stand ab dem Snapshot von
-  Tag T früh morgens im Depot, der gebuchte Saldo sank erst am Tag T+1 nachts, die Valuta ist der
-  Tag T+2 Ein „in Lieferung"-Zuschlag zum Gesamtwert (Spalte `securities_in_transit` aus Migration 0015,
+- **Nicht zur Valuta.** Die gekaufte Position stand schon ab dem ersten Snapshot nach der Ausführung im
+  Depot, der gebuchte Saldo sank erst rund einen Tag später, die Valuta lag noch später. Ein „in Lieferung"-Zuschlag zum Gesamtwert (Spalte `securities_in_transit` aus Migration 0015,
   nie veröffentlicht, aber auf der Live-DB schon gelaufen – deshalb ein `DROP COLUMN` in 0016 statt
   einer nachträglichen Änderung, Migrationen sind append-only) zählte die Aktien doppelt (Gesamtwert
-  43.000 statt 40.000 €).
+  um den Kaufbetrag zu hoch).
   Deshalb Buchungstag (= Ausführungstag) als Zeitbezug für Bewegungen, nicht die Valuta – abweichend
   von der zunächst gewählten Variante „Valuta statt Buchungsdatum", deren Voraussetzung sich als falsch
   erwies.
 - **Guthaben aus Buchungen zurückgerechnet statt aus Saldo-Stichproben.** Das Guthaben je Tag ist der
   aktuelle gebuchte Saldo minus alle Umsätze des Verrechnungskontos *nach* dem Tag
-  (`DepotPerformanceCalculator`, Ledger-Rückrechnung; am Realbestand exakt: 1.300,00 + 2.700,00 =
-  4.000,00 € = am Trackingbeginn gemessener Saldo). Damit liegen Positionen und Guthaben am Ausführungstag
+  (`DepotPerformanceCalculator`, Ledger-Rückrechnung; am Realbestand exakt gleich dem zum
+  Trackingbeginn gemessenen Saldo). Damit liegen Positionen und Guthaben am Ausführungstag
   zusammen; Restunschärfe nur innerhalb des Ausführungstags (Buchungstag ist tagesgenau,
   Snapshots stündlich, Tageswechsel in UTC). `available_amount` taugte nicht: es sinkt schon bei der
-  Order-Erteilung (So abends), Tage vor der Ausführung.
+  Order-Erteilung, Tage vor der Ausführung.
 - Der Gesamtwert springt dadurch nicht mehr um den Kaufbetrag; ein Kauf schlägt nur mit den echten
   Kosten zu Buche (hier nur die Gebühren).
 

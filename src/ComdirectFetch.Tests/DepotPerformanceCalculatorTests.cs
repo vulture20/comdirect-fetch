@@ -114,7 +114,7 @@ public class DepotPerformanceCalculatorTests
     [Fact]
     public void Kauf_aus_vorhandenem_Guthaben_ist_neutral_wenn_Depot_und_Buchung_am_selben_Tag_erscheinen()
     {
-        // Nachgestellt nach den echten Beispiel-Trade-Daten (Tag T): Aktien stehen am Ausführungstag im Depot,
+        // Nachgestellt nach dem Verlauf eines echten Trades (synthetische Werte): Aktien stehen am Ausführungstag im Depot,
         // das Guthaben sinkt zum selben Buchungstag. Valuta (hier 4.) ist für das Modell ohne Belang.
         var buy = Tx(DefaultAccount, -3000m, "Securities", 2, 4);
         var result = Calculate(
