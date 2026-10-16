@@ -167,6 +167,35 @@ public class DepotPerformanceCalculatorTests
     }
 
     [Fact]
+    public void Sparplan_mit_Depot_Buchungstag_zaehlt_erst_wenn_die_Anteile_im_Depot_stehen()
+    {
+        // Live-Verlauf nachgestellt (synthetische Werte): Kontobuchung Tag 2, Anteile erst ab Tag 3 in den Positionen.
+        var savingsPlan = Tx(GiroAccount, -100m, "Securities", 2, 6);
+        var result = DepotPerformanceCalculator.Calculate(
+            [Snapshot(1, At(1), 10_000m), Snapshot(2, At(2), 10_000m), Snapshot(3, At(3), 10_100m)],
+            new Dictionary<long, decimal> { [DefaultAccount] = 0m },
+            [new LinkedTransaction(savingsPlan, IsDefaultSettlementAccount: false, FlowDate: new DateOnly(2026, 9, 3))]);
+
+        Assert.Equal(10_000m, result[1].NetInvestedCapital);
+        Assert.Equal(0m, result[1].TimeWeightedReturnPercent);
+        Assert.Equal(10_100m, result[2].NetInvestedCapital);
+        Assert.Equal(0m, result[2].TimeWeightedReturnPercent);
+    }
+
+    [Fact]
+    public void Snapshot_kurz_nach_Mitternacht_Ortszeit_gehoert_zum_neuen_Bankkalendertag()
+    {
+        // 22:30 UTC im September = 00:30 Uhr in Berlin am Folgetag: die Einzahlung vom Folgetag zählt schon mit.
+        var savingsPlan = Tx(GiroAccount, -100m, "Securities", 3);
+        var result = Calculate(
+            [Snapshot(1, At(1), 10_000m), Snapshot(2, new DateTimeOffset(2026, 9, 2, 22, 30, 0, TimeSpan.Zero), 10_100m)],
+            latestBalance: 0m, savingsPlan);
+
+        Assert.Equal(10_100m, result[1].NetInvestedCapital);
+        Assert.Equal(0m, result[1].TimeWeightedReturnPercent);
+    }
+
+    [Fact]
     public void Kursgewinn_ohne_Bewegung_schlaegt_sich_in_der_TWR_nieder_das_Kapital_bleibt()
     {
         var result = Calculate([Snapshot(1, At(1), 1000m), Snapshot(2, At(2), 1100m)], latestBalance: 0m);

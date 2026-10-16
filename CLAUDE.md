@@ -328,7 +328,17 @@ Do this as part of the change itself, not only when the user asks for it.
   recomputes *all* snapshots from the baseline on every run and writes back only rows whose stored
   values differ (`settlement_cash`, `net_invested_capital`, `dividends_received`,
   `time_weighted_return_pct`; migrations 0014–0016), so late-arriving bookings self-heal and a model
-  change backfills history automatically. `grafana/dashboards/depot-performance.json` shows the old
+  change backfills history automatically. **Savings plans (v1.2.1, Issue #18, live)**: shares appear in the
+  positions only on the *depot* booking date (after the bank's nightly run), not on the account booking date
+  nor the value date — `SavingsPlanFlowDating` matches each `Securities` booking outside the default
+  settlement account to its `depot_transactions` row (WKN/ISIN in text, direction, amount = transaction_value,
+  business date ±5 days, unique) and passes the depot booking date as `LinkedTransaction.FlowDate` (external
+  flows only; ledger/dividends keep the account booking date). Depot transactions are therefore fetched
+  *before* `RecomputePerformanceAsync`. **Timezone gotcha**: the container runs with `TZ=Europe/Berlin`;
+  `recorded_at` is written as UTC but Dapper's `DATETIME`→`DateTimeOffset` conversion assumes local time, so
+  `PortfolioSnapshotPerformanceRow` reads it as `DateTime` and marks it UTC explicitly, and snapshots are
+  assigned to the German calendar day via `BankCalendar.ToBankDate`. Other `DateTimeOffset` reads have the
+  same shift but aren't used for date logic. `grafana/dashboards/depot-performance.json` shows the old
   `acquisition_value` view (full purchase history, no cash) above the new since-tracking-start view.
 - **Fee overview (v1.2.0, `docs/konzept.md` §17, Issue #19)**: trading fees are not separate bookings at
   comdirect, they're inside the `Securities` booking amount. `GET /brokerage/v3/depots/{id}/transactions`

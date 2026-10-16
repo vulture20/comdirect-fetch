@@ -65,6 +65,10 @@ public sealed class PortfolioFetchService(
 
             await UpdateSettlementAccountLinksAsync(portfolioId, depot, stoppingToken);
 
+            // Vor der Depotübersicht, damit RecomputePerformanceAsync schon die aktuellen Depot-Transaktionen
+            // kennt (Zeitbezug der Sparplan-Käufe, Issue #18).
+            await FetchDepotTransactionsAsync(token, portfolioId, depot.DepotId, stoppingToken);
+
             var logId = await syncLogRepository.InsertAsync(new SyncLogEntry
             {
                 DataKind = SyncDataKind.Depotuebersicht,
@@ -114,8 +118,6 @@ public sealed class PortfolioFetchService(
                 logger.LogError(ex, "Depotübersicht für Depot {DepotId} fehlgeschlagen.", depot.DepotId);
                 await syncLogRepository.CompleteAsync(logId, SyncStatus.Fehlgeschlagen, DateTimeOffset.UtcNow, ex.Message, stoppingToken);
             }
-
-            await FetchDepotTransactionsAsync(token, portfolioId, depot.DepotId, stoppingToken);
         }
     }
 
@@ -237,8 +239,17 @@ public sealed class PortfolioFetchService(
             return;
         }
 
-        var transactions = (await transactionRepository.GetForAccountsAsync(links.Select(l => l.AccountId), ct))
-            .Select(t => new LinkedTransaction(t, defaultAccountIds.Contains(t.AccountId)))
+        var accountTransactions = await transactionRepository.GetForAccountsAsync(links.Select(l => l.AccountId), ct);
+
+        // Sparplan-Käufe (Wertpapierbuchungen außerhalb des Standard-Verrechnungskontos) zählen erst ab dem
+        // Depot-Buchungstag, an dem die Anteile in den Positionen erscheinen (Issue #18).
+        var flowDates = SavingsPlanFlowDating.Resolve(
+            accountTransactions.Where(t => !defaultAccountIds.Contains(t.AccountId) && t.TransactionType == "Securities"),
+            await depotTransactionRepository.GetBookedForPortfolioAsync(portfolioId, ct));
+
+        var transactions = accountTransactions
+            .Select(t => new LinkedTransaction(
+                t, defaultAccountIds.Contains(t.AccountId), flowDates.TryGetValue(t.Id, out var flowDate) ? flowDate : null))
             .ToList();
         var latestBalances = await accountBalanceRepository.GetLatestBalancesAsync(defaultAccountIds, ct);
         if (latestBalances.Count < defaultAccountIds.Count)

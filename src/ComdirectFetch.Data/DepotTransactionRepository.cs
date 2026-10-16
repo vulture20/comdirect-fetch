@@ -53,4 +53,24 @@ public sealed class DepotTransactionRepository(IDbConnectionFactory connectionFa
         await connection.ExecuteAsync(sql, transaction);
         return !exists;
     }
+
+    /// <summary>Alle gebuchten Depot-Transaktionen eines Depots (Issue #18: Zeitbezug der Sparplan-Käufe).</summary>
+    public async Task<IReadOnlyList<DepotTransaction>> GetBookedForPortfolioAsync(
+        long portfolioId, CancellationToken cancellationToken = default)
+    {
+        using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        const string sql = """
+            SELECT id AS Id, portfolio_id AS PortfolioId, comdirect_transaction_id AS ComdirectTransactionId,
+                   booking_status AS BookingStatus, booking_date AS BookingDate, business_date AS BusinessDate,
+                   transaction_type AS TransactionType, direction AS Direction, isin AS Isin, wkn AS Wkn,
+                   instrument_name AS InstrumentName, instrument_type AS InstrumentType, quantity AS Quantity,
+                   execution_price AS ExecutionPrice, transaction_value AS TransactionValue, currency AS Currency,
+                   fee_amount AS FeeAmount, first_seen_at AS FirstSeenAt
+            FROM depot_transactions
+            WHERE portfolio_id = @PortfolioId AND booking_status = 'BOOKED';
+            """;
+
+        var rows = await connection.QueryAsync<DepotTransaction>(sql, new { PortfolioId = portfolioId });
+        return rows.AsList();
+    }
 }

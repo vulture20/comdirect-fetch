@@ -262,8 +262,8 @@ Diese Pflege übernimmt Claude Code während der Entwicklung selbstständig als 
   „Wertpapierabrechnung”), und – erst nach den ersten echten Trades über das Verrechnungskonto
   möglich – die Erkenntnis, dass Käufe/Verkäufe dort intern sind und nur Geld von außen zählt.
   Offen: eine echte externe Überweisung auf/vom Verrechnungskonto liegt noch nicht vor (Annahme
-  `Transfer`, nur per Unit-Test abgesichert), ebenso ein Sparplan-Kauf innerhalb des Trackingzeitraums
-  (Lieferzeitpunkt der Anteile nicht direkt belegbar, angenommen Buchungstag).
+  `Transfer`, nur per Unit-Test abgesichert). Der Zeitbezug von Sparplan-Käufen ist seit 1.2.1 live
+  geklärt (Issue #18, Abschnitt 13: Depot-Buchungstag).
 - **Auth-Status über Neustarts persistieren** (Abschnitt 3): umgesetzt (siehe `CHANGELOG.md` 0.11.0, `db/migrations/0006_auth_token_store.sql`). Der Session-Token wird bei optional gesetztem `Comdirect__TokenEncryptionKeyBase64` AES-256-GCM-verschlüsselt in der DB abgelegt und beim Start automatisch wiederhergestellt (inkl. Refresh zur Gültigkeitsprüfung) – ein Neustart innerhalb der Refresh-Token-Gültigkeit braucht dann keine neue TAN-Freigabe mehr. Ohne gesetzten Schlüssel bleibt das Verhalten wie zuvor (In-Memory-only). Live verifiziert (Neustart nach echter TAN-Freigabe, Session danach direkt wieder `Authentifiziert`). Erledigt.
 - **Sichere Ablage der comdirect-Zugangsdaten** (Abschnitt 4/10): umgesetzt (siehe
   `CHANGELOG.md` 0.12.0) – zweistufiger Schutz, Docker-Secrets für Client-ID/Secret,
@@ -717,6 +717,37 @@ und ich daraus schloss, die Aktien seien noch nicht im Depot:
   Order-Erteilung, Tage vor der Ausführung.
 - Der Gesamtwert springt dadurch nicht mehr um den Kaufbetrag; ein Kauf schlägt nur mit den echten
   Kosten zu Buche (hier nur die Gebühren).
+
+### Sparplan-Käufe zählen ab dem Depot-Buchungstag (1.2.1, Issue #18)
+
+Erster Sparplan-Lauf im Trackingzeitraum, live beobachtet: Kontobuchung am Ausführungstag T (Girokonto),
+Valuta T+4, Depot-Transaktion mit Handelstag T und Depot-Buchungstag T+1. Die neuen Anteile standen erst ab
+dem Snapshot nach dem nächtlichen Lauf der Bank (gegen 03:00 Uhr Ortszeit an T+1) in den Positionen – also
+weder am Konto-Buchungstag noch zur Valuta (der zunächst erwogene Wechsel auf die Valuta wäre falsch
+gewesen). Anders als bei Orders über das Verrechnungskonto, deren Positionen schon am Ausführungstag
+erscheinen.
+
+Mit der Einzahlung zum Konto-Buchungstag lagen Gewinn und TWR deshalb rund einen Tag lang um den
+Kaufbetrag zu niedrig, bis die Anteile erschienen. Seit 1.2.1 ordnet `SavingsPlanFlowDating` (rein,
+unit-getestet) jede Wertpapierbuchung außerhalb des Standard-Verrechnungskontos ihrer Depot-Transaktion
+aus Abschnitt 17 zu (WKN/ISIN im Buchungstext, Richtung, Betrag = Abrechnungsbetrag, Handelstag höchstens
+fünf Tage entfernt, eindeutig) und setzt die Einzahlung zu deren Buchungstag an
+(`LinkedTransaction.FlowDate`); ohne eindeutigen Treffer bleibt es beim Konto-Buchungstag. Dafür ruft
+`PortfolioFetchService` die Depot-Transaktionen jetzt *vor* der Neuberechnung ab. Die Guthaben-Rückrechnung
+und Dividenden bleiben beim Konto-Buchungstag. Restunschärfe: zwischen Mitternacht und dem nächtlichen Lauf
+der Bank (wenige Stunden) steht das Kapital schon höher als die Positionen; die tagesverkettete TWR ist
+davon nicht betroffen, weil nur der letzte Snapshot eines Tages in die Kette eingeht. Live nachgerechnet:
+der Ausschlag schrumpft von rund einem Tag auf diese Nachtstunden, der aktuelle TWR-Wert ändert sich nur in
+der vierten Nachkommastelle.
+
+**Zeitzone (behoben in 1.2.1):** Der Container läuft mit `TZ=Europe/Berlin`, `recorded_at` wird als UTC
+geschrieben, beim Lesen nimmt die automatische Umwandlung `DATETIME` → `DateTimeOffset` aber die Ortszeit
+an. Dadurch lag die Tageszuordnung der Snapshots 1–2 Stunden daneben. `PortfolioSnapshotRepository` liest
+`recorded_at` jetzt als `DateTime` und kennzeichnet es explizit als UTC, `DepotPerformanceCalculator`
+ordnet Snapshots über `BankCalendar.ToBankDate` dem deutschen Kalendertag zu (passend zu den
+Buchungstagen der Bank). Andere `DateTimeOffset`-Felder (z. B. `first_seen_at`, Saldo-Zeitstempel) werden
+beim Lesen genauso verschoben, aber nirgends für Datumslogik genutzt; Grafana liest die Spalten
+direkt als UTC und ist nicht betroffen.
 
 ### Berechnung und Speicherung
 

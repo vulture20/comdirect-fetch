@@ -4,6 +4,26 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 1.2.1 – Depot-Performance: Sparplan-Käufe zum Depot-Buchungstag, Snapshots im deutschen Kalendertag (Issue #18)
+
+Erster Sparplan-Lauf im Trackingzeitraum, live geprüft: die Anteile erscheinen erst am Depot-Buchungstag
+(nach dem nächtlichen Lauf der Bank) in den Positionen – nicht am Konto-Buchungstag und nicht zur Valuta. Die
+Einzahlung wurde bisher zum Konto-Buchungstag angesetzt; Gewinn und TWR lagen dadurch rund einen Tag lang um
+den Kaufbetrag zu niedrig. Details `docs/konzept.md` Abschnitt 13.
+
+- Neu `ComdirectFetch.Domain.SavingsPlanFlowDating` (rein, unit-getestet): ordnet Wertpapierbuchungen außerhalb
+  des Standard-Verrechnungskontos ihrer Depot-Transaktion zu (WKN/ISIN, Richtung, Betrag, Handelstag ±5 Tage,
+  eindeutig) und liefert deren Buchungstag; `LinkedTransaction.FlowDate` übergibt ihn an
+  `DepotPerformanceCalculator` (nur für externe Bewegungen). Ohne Treffer bleibt es beim Konto-Buchungstag.
+- `PortfolioFetchService` ruft die Depot-Transaktionen jetzt vor der Neuberechnung ab.
+- Zeitzonen-Fix: `recorded_at` wird explizit als UTC gelesen (im Container mit `TZ=Europe/Berlin` lag die
+  Tageszuordnung sonst 1–2 Stunden daneben), Snapshots werden über `BankCalendar` dem deutschen Kalendertag
+  zugeordnet.
+- Keine Migration; alle Snapshots werden beim nächsten Lauf automatisch neu berechnet.
+
+Live verifiziert: der Ausschlag schrumpft auf die Nachtstunden zwischen Mitternacht und dem Lauf der Bank,
+das Kapital steigt um den Kaufbetrag, der aktuelle TWR-Wert ändert sich nur in der vierten Nachkommastelle.
+
 ## 1.2.0 – Gebührenübersicht: Handelsgebühren je Trade (Issue #19)
 
 Handelsgebühren kommen bei comdirect nicht als eigene Buchung vor, sondern stecken im Betrag der
@@ -64,7 +84,8 @@ sichtbar ins Negative. Neues Modell (Details
 
 Live verifiziert: Gesamtwert = Positionen + Guthaben stimmt, Rendite und TWR sind identisch (ohne externe
 Bewegungen müssen sie übereinstimmen); um den Kauf herum kein Sprung mehr. Offen: eine echte externe Überweisung aufs/vom Verrechnungskonto und ein
-Sparplan-Kauf im Trackingzeitraum liegen noch nicht vor – beides nur per Unit-Test abgesichert.
+Sparplan-Kauf im Trackingzeitraum liegen noch nicht vor – beides nur per Unit-Test abgesichert (Sparplan
+inzwischen live geprüft, siehe 1.2.1).
 
 ## 1.0.1 – IBAN-Logging maskiert (Datenschutz-Review)
 

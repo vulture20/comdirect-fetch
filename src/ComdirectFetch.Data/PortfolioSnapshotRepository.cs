@@ -15,7 +15,16 @@ namespace ComdirectFetch.Data;
 public sealed class PortfolioSnapshotPerformanceRow
 {
     public long SnapshotId { get; set; }
-    public DateTimeOffset Timestamp { get; set; }
+
+    /// <summary>
+    /// recorded_at, geschrieben als UTC. Bewusst als <see cref="DateTime"/> gelesen und hier explizit als UTC
+    /// gekennzeichnet (Issue #18): die automatische DATETIME-zu-DateTimeOffset-Konvertierung nimmt die
+    /// Ortszeit des Prozesses an - im Container (TZ=Europe/Berlin) lag die Tageszuordnung dadurch 1-2 h daneben.
+    /// </summary>
+    public DateTime RecordedAtUtc { get; set; }
+
+    public DateTimeOffset Timestamp => new(DateTime.SpecifyKind(RecordedAtUtc, DateTimeKind.Utc));
+
     public decimal PositionsValue { get; set; }
     public decimal? SettlementCash { get; set; }
     public decimal? NetInvestedCapital { get; set; }
@@ -76,7 +85,7 @@ public sealed class PortfolioSnapshotRepository(IDbConnectionFactory connectionF
     {
         using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         const string sql = """
-            SELECT id AS SnapshotId, recorded_at AS Timestamp, total_value AS PositionsValue,
+            SELECT id AS SnapshotId, recorded_at AS RecordedAtUtc, total_value AS PositionsValue,
                    settlement_cash AS SettlementCash,
                    net_invested_capital AS NetInvestedCapital, dividends_received AS DividendsReceived,
                    time_weighted_return_pct AS TimeWeightedReturnPercent

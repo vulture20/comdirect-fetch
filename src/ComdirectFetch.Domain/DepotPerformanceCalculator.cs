@@ -4,7 +4,9 @@ namespace ComdirectFetch.Domain;
 public sealed record DepotSnapshotInput(long SnapshotId, DateTimeOffset Timestamp, decimal PositionsValue);
 
 /// <summary>Ein Umsatz auf einem depot-verknüpften Konto, ergänzt um die Info, ob es das Standard-Verrechnungskonto ist.</summary>
-public sealed record LinkedTransaction(Transaction Transaction, bool IsDefaultSettlementAccount);
+/// <param name="FlowDate">Abweichender Tag, zu dem eine <em>externe</em> Bewegung zählt (Issue #18: Sparplan-Käufe
+/// erscheinen erst am Depot-Buchungstag in den Positionen, siehe <see cref="SavingsPlanFlowDating"/>); null = Buchungstag.</param>
+public sealed record LinkedTransaction(Transaction Transaction, bool IsDefaultSettlementAccount, DateOnly? FlowDate = null);
 
 /// <summary>Die für einen Snapshot berechneten Kennzahlen (KONZEPT.md Abschnitt 13, Issue #12).</summary>
 public sealed record DepotPerformancePoint(
@@ -31,7 +33,12 @@ public sealed record DepotPerformancePoint(
 /// Umsätze nach dem Tag) statt aus einzelnen Saldo-Stichproben zu lesen. Grund, live belegt: comdirect
 /// zeigt eine ausgeführte Order sofort in den Depot-Positionen, der gebuchte Saldo sinkt aber erst
 /// rund einen Tag später und die Valuta liegt nochmal später. Mit dem Buchungstag als Bezug (= Ausführungstag) stimmen Positionen und Guthaben zusammen.
-/// Bewegungen werden deshalb ebenfalls zum Buchungstag angesetzt, nicht zur Valuta.
+/// Bewegungen werden deshalb ebenfalls zum Buchungstag angesetzt, nicht zur Valuta. Ausnahme (Issue #18,
+/// live belegt): Sparplan-Käufe vom Girokonto erscheinen erst am Depot-Buchungstag (Folgetag) in den
+/// Positionen - dafür setzt der Aufrufer <see cref="LinkedTransaction.FlowDate"/>.
+///
+/// Snapshots werden dem deutschen Kalendertag zugeordnet (<see cref="BankCalendar"/>), passend zu den
+/// Buchungstagen der Bank.
 /// </summary>
 public static class DepotPerformanceCalculator
 {
@@ -65,10 +72,10 @@ public static class DepotPerformanceCalculator
             switch (DepotCashflowClassifier.Classify(transaction, linked.IsDefaultSettlementAccount))
             {
                 case DepotCashflowKind.ExternalDeposit:
-                    flows.Add((date, Math.Abs(transaction.Amount)));
+                    flows.Add((linked.FlowDate ?? date, Math.Abs(transaction.Amount)));
                     break;
                 case DepotCashflowKind.ExternalWithdrawal:
-                    flows.Add((date, -Math.Abs(transaction.Amount)));
+                    flows.Add((linked.FlowDate ?? date, -Math.Abs(transaction.Amount)));
                     break;
                 case DepotCashflowKind.Dividend:
                     dividends.Add((date, transaction.Amount));
@@ -84,7 +91,7 @@ public static class DepotPerformanceCalculator
         var valid = snapshotsAscending
             .Select(snapshot =>
             {
-                var date = DateOnly.FromDateTime(snapshot.Timestamp.UtcDateTime);
+                var date = BankCalendar.ToBankDate(snapshot.Timestamp);
                 // Saldo nach allen bis einschließlich diesem Tag gebuchten Umsätzen.
                 var cash = latestBalance - (ledgerTotal - ledgerSums.SumBetween(DateOnly.MinValue, date));
                 return (Snapshot: snapshot, Date: date, Cash: cash, Value: snapshot.PositionsValue + cash);
