@@ -84,3 +84,37 @@ public class BankingModelsSerializationTests
         Assert.Null(instrument.StaticData);
     }
 }
+
+/// <summary>Depot-Transaktion im live beobachteten Format (Issue #19), synthetische Werte.</summary>
+public class DepotTransactionSerializationTests
+{
+    [Fact]
+    public void DepotTransactionEntry_liest_Live_Format()
+    {
+        var json = """
+            {
+                "transactionId": "0000000000000000000000000000000A",
+                "bookingStatus": "BOOKED",
+                "bookingDate": "2026-01-16",
+                "businessDate": "2026-01-15",
+                "quantity": {"value": "10", "unit": "XXX"},
+                "instrumentId": "X",
+                "instrument": {"wkn": "A0B1C2", "isin": "DE0000000001", "name": "Beispiel AG",
+                    "staticData": {"instrumentType": "SHARE"}},
+                "executionPrice": {"value": "100", "unit": "EUR"},
+                "transactionValue": {"value": "1009.9", "unit": "EUR"},
+                "transactionDirection": "IN",
+                "transactionType": "BUY"
+            }
+            """;
+
+        var entry = JsonSerializer.Deserialize<DepotTransactionEntry>(json)!;
+
+        Assert.Equal(new DateOnly(2026, 1, 15), entry.BusinessDate);
+        Assert.Equal(new DateOnly(2026, 1, 16), entry.BookingDate);
+        Assert.Equal(10m, entry.Quantity.Value);
+        Assert.Equal(1009.9m, entry.TransactionValue!.Value);
+        Assert.Equal("SHARE", entry.Instrument!.StaticData!.InstrumentType);
+        Assert.Equal("IN", entry.TransactionDirection);
+    }
+}

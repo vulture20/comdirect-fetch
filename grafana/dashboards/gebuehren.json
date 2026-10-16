@@ -1,0 +1,500 @@
+{
+  "uid": "comdirect-gebuehren",
+  "title": "comdirect-fetch: Gebühren",
+  "description": "Gebührenübersicht (Issue #19, KONZEPT.md Abschnitt 17): Handelsgebühren je Trade aus den comdirect-Depot-Transaktionen (Abrechnungsbetrag minus Kurswert) und Kontoführung/Kartenentgelt aus den kategorisierten Kontoumsätzen.",
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "browser",
+  "time": {
+    "from": "now-1y",
+    "to": "now"
+  },
+  "refresh": "5m",
+  "tags": [
+    "comdirect-fetch"
+  ],
+  "links": [
+    {
+      "title": "Cashflow & Kosten",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/comdirect-cashflow",
+      "targetBlank": false,
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "tooltip": ""
+    },
+    {
+      "title": "Depot-Performance",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/comdirect-depot-performance",
+      "targetBlank": false,
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "tooltip": ""
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Gebühren gesamt (Zeitraum)",
+      "description": "Handelsgebühren (aus depot_transactions) plus Kontoführung/Kartenentgelt (Kategorie Kontoführungsgebühren).",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "comdirect-mariadb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "comdirect-mariadb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM(f.fee), 0) AS `Gebühren`\nFROM (\n  SELECT dt.business_date AS d, CASE dt.direction WHEN 'IN' THEN 'Handel: Kauf' ELSE 'Handel: Verkauf' END AS art, dt.fee_amount AS fee\n  FROM depot_transactions dt\n  WHERE dt.booking_status = 'BOOKED' AND dt.fee_amount IS NOT NULL AND $__timeFilter(dt.business_date)\n  UNION ALL\n  SELECT t.booking_date AS d, 'Kontoführung/Karte' AS art, -t.amount AS fee\n  FROM transactions t\n  JOIN categories c ON c.id = t.category_id\n  WHERE c.name = 'Kontoführungsgebühren' AND $__timeFilter(t.booking_date)\n) f"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Handelsgebühren (Zeitraum)",
+      "description": "Je Trade: Abrechnungsbetrag minus Kurswert (Stück × Ausführungskurs), siehe KONZEPT.md Abschnitt 17. Der Spread steckt im Ausführungskurs und ist nicht enthalten. Zeitbezug: Handelstag.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "comdirect-mariadb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "comdirect-mariadb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM(dt.fee_amount), 0) AS `Handelsgebühren`\nFROM depot_transactions dt\nWHERE dt.booking_status = 'BOOKED' AND $__timeFilter(dt.business_date)"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Kontoführung/Karte (Zeitraum)",
+      "description": "Kontobuchungen der Kategorie Kontoführungsgebühren (z. B. Kartenentgelt). Erstattungen mindern die Summe.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "comdirect-mariadb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "comdirect-mariadb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM(-t.amount), 0) AS `Kontogebühren`\nFROM transactions t\nJOIN categories c ON c.id = t.category_id\nWHERE c.name = 'Kontoführungsgebühren' AND $__timeFilter(t.booking_date)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Gebührenquote am Handelsvolumen (Zeitraum)",
+      "description": "Handelsgebühren geteilt durch den Kurswert aller Trades im Zeitraum.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "comdirect-mariadb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "comdirect-mariadb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT 100 * SUM(dt.fee_amount) / NULLIF(SUM(dt.quantity * dt.execution_price), 0) AS `Quote`\nFROM depot_transactions dt\nWHERE dt.booking_status = 'BOOKED' AND dt.fee_amount IS NOT NULL AND $__timeFilter(dt.business_date)"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Gebühren je Monat nach Art",
+      "description": "Gestapelt: Handelsgebühren (Kauf/Verkauf, Zeitbezug Handelstag) und Kontoführung/Karte (Zeitbezug Buchungstag).",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "comdirect-mariadb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyEUR",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "comdirect-mariadb"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT CAST(DATE_FORMAT(f.d, '%Y-%m-01') AS DATE) AS time, f.art AS metric, SUM(f.fee) AS value\nFROM (\n  SELECT dt.business_date AS d, CASE dt.direction WHEN 'IN' THEN 'Handel: Kauf' ELSE 'Handel: Verkauf' END AS art, dt.fee_amount AS fee\n  FROM depot_transactions dt\n  WHERE dt.booking_status = 'BOOKED' AND dt.fee_amount IS NOT NULL AND $__timeFilter(dt.business_date)\n  UNION ALL\n  SELECT t.booking_date AS d, 'Kontoführung/Karte' AS art, -t.amount AS fee\n  FROM transactions t\n  JOIN categories c ON c.id = t.category_id\n  WHERE c.name = 'Kontoführungsgebühren' AND $__timeFilter(t.booking_date)\n) f\nGROUP BY DATE_FORMAT(f.d, '%Y-%m-01'), f.art\nORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Handelsgebühren je Wertpapier (Zeitraum)",
+      "description": "Anzahl Trades, Kurswert und Gebühren je Wertpapier; Quote = Gebühren / Kurswert.",
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 13
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "comdirect-mariadb"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Kurswert|Gebühren"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyEUR"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Quote"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Gebühren",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "comdirect-mariadb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(dt.instrument_name, dt.isin) AS `Wertpapier`, dt.isin AS `ISIN`, COUNT(*) AS `Trades`,\n       SUM(dt.quantity * dt.execution_price) AS `Kurswert`, SUM(dt.fee_amount) AS `Gebühren`,\n       100 * SUM(dt.fee_amount) / NULLIF(SUM(dt.quantity * dt.execution_price), 0) AS `Quote`\nFROM depot_transactions dt\nWHERE dt.booking_status = 'BOOKED' AND dt.fee_amount IS NOT NULL AND $__timeFilter(dt.business_date)\nGROUP BY COALESCE(dt.instrument_name, dt.isin), dt.isin\nORDER BY `Gebühren` DESC"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Gebühren-Effekt auf die Rendite seit Tracking-Beginn",
+      "description": "Unabhängig vom gewählten Zeitraum: Handelsgebühren seit dem ersten Depot-Snapshot geteilt durch das aktuelle Kapital (net_invested_capital, KONZEPT.md Abschnitt 13), in Prozentpunkten. Um so viel läge die Rendite seit Tracking-Beginn ohne Handelsgebühren höher; die Gebühren stecken dort bereits im Gewinn.",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 13
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "comdirect-mariadb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "comdirect-mariadb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT 100 * SUM(f.fees) / NULLIF(SUM(f.capital), 0) AS `Prozentpunkte`\nFROM (\n  SELECT\n    (SELECT COALESCE(SUM(dt.fee_amount), 0) FROM depot_transactions dt\n      WHERE dt.portfolio_id = p.id AND dt.booking_status = 'BOOKED'\n        AND dt.business_date >= (SELECT DATE(MIN(s.recorded_at)) FROM portfolio_snapshots s\n                                 WHERE s.portfolio_id = p.id AND s.net_invested_capital IS NOT NULL)) AS fees,\n    (SELECT s.net_invested_capital FROM portfolio_snapshots s\n      WHERE s.portfolio_id = p.id AND s.net_invested_capital IS NOT NULL\n      ORDER BY s.recorded_at DESC LIMIT 1) AS capital\n  FROM portfolios p\n) f\nWHERE f.capital IS NOT NULL"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Trades (Zeitraum)",
+      "description": "Alle gebuchten Käufe/Verkäufe laut comdirect-Depot-Transaktionen. Abrechnung = belasteter bzw. gutgeschriebener Betrag inkl. Gebühren.",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "datasource": {
+        "type": "mysql",
+        "uid": "comdirect-mariadb"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Kurs|Kurswert|Abrechnung|Gebühr"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyEUR"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Gebühr %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Stück"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 4
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "comdirect-mariadb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT dt.business_date AS `Handelstag`, CASE dt.direction WHEN 'IN' THEN 'Kauf' WHEN 'OUT' THEN 'Verkauf' ELSE dt.transaction_type END AS `Art`,\n       COALESCE(dt.instrument_name, dt.isin) AS `Wertpapier`, dt.isin AS `ISIN`, dt.quantity AS `Stück`, dt.execution_price AS `Kurs`,\n       dt.quantity * dt.execution_price AS `Kurswert`, dt.transaction_value AS `Abrechnung`, dt.fee_amount AS `Gebühr`,\n       100 * dt.fee_amount / NULLIF(dt.quantity * dt.execution_price, 0) AS `Gebühr %`\nFROM depot_transactions dt\nWHERE dt.booking_status = 'BOOKED' AND $__timeFilter(dt.business_date)\nORDER BY dt.business_date DESC, dt.id DESC"
+        }
+      ]
+    }
+  ]
+}

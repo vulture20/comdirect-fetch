@@ -20,6 +20,17 @@
       "asDropdown": false,
       "includeVars": false,
       "keepTime": false
+    },
+    {
+      "title": "Gebühren",
+      "tooltip": "Gebührenübersicht: Handelsgebühren je Trade und Kontoführung/Karte (Issue #19).",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/comdirect-gebuehren",
+      "targetBlank": false,
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true
     }
   ],
   "panels": [
@@ -99,7 +110,7 @@
     {
       "id": 4,
       "type": "timeseries",
-      "title": "Gebühren je Monat (Kontoführung + Order)",
+      "title": "Gebühren je Monat (Kontoführung + Handel)",
       "gridPos": { "h": 10, "w": 18, "x": 0, "y": 24 },
       "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
       "fieldConfig": {
@@ -115,7 +126,7 @@
           "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT CAST(DATE_FORMAT(t.booking_date, '%Y-%m-01') AS DATE) AS time, c.name AS metric, SUM(ABS(t.amount)) AS value\nFROM transactions t\nJOIN categories c ON c.id = t.category_id\nWHERE c.name IN ('Kontoführungsgebühren', 'Ordergebühren') AND $__timeFilter(t.booking_date)\nGROUP BY DATE_FORMAT(t.booking_date, '%Y-%m-01'), c.name\nORDER BY time"
+          "rawSql": "SELECT CAST(DATE_FORMAT(f.d, '%Y-%m-01') AS DATE) AS time, f.metric, SUM(f.fee) AS value\nFROM (\n  SELECT t.booking_date AS d, c.name AS metric, ABS(t.amount) AS fee\n  FROM transactions t\n  JOIN categories c ON c.id = t.category_id\n  WHERE c.name IN ('Kontoführungsgebühren', 'Ordergebühren') AND $__timeFilter(t.booking_date)\n  UNION ALL\n  SELECT dt.business_date, 'Handelsgebühren', dt.fee_amount\n  FROM depot_transactions dt\n  WHERE dt.booking_status = 'BOOKED' AND dt.fee_amount IS NOT NULL AND $__timeFilter(dt.business_date)\n) f\nGROUP BY DATE_FORMAT(f.d, '%Y-%m-01'), f.metric\nORDER BY time"
         }
       ]
     },
@@ -135,7 +146,7 @@
           "datasource": { "type": "mysql", "uid": "comdirect-mariadb" },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT SUM(ABS(t.amount)) AS `Gebuehren`\nFROM transactions t\nJOIN categories c ON c.id = t.category_id\nWHERE c.name IN ('Kontoführungsgebühren', 'Ordergebühren') AND $__timeFilter(t.booking_date)"
+          "rawSql": "SELECT\n  (SELECT COALESCE(SUM(ABS(t.amount)), 0) FROM transactions t JOIN categories c ON c.id = t.category_id\n    WHERE c.name IN ('Kontoführungsgebühren', 'Ordergebühren') AND $__timeFilter(t.booking_date))\n  + (SELECT COALESCE(SUM(dt.fee_amount), 0) FROM depot_transactions dt\n    WHERE dt.booking_status = 'BOOKED' AND $__timeFilter(dt.business_date)) AS `Gebuehren`"
         }
       ]
     }

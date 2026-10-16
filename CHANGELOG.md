@@ -4,6 +4,33 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 1.2.0 – Gebührenübersicht: Handelsgebühren je Trade (Issue #19)
+
+Handelsgebühren kommen bei comdirect nicht als eigene Buchung vor, sondern stecken im Betrag der
+`Securities`-Buchung. Neu werden die Depot-Transaktionen (`GET /brokerage/v3/depots/{depotId}/transactions`)
+abgerufen und gespeichert. Live geprüft: `transactionValue` ist der Abrechnungsbetrag inklusive Gebühren
+(für jeden Trade centgenau gleich der Kontobuchung), die Gebühr ist also die Differenz zum Kurswert (Stück ×
+Ausführungskurs). Details `docs/konzept.md` Abschnitt 17.
+
+- Neue Tabelle `depot_transactions` mit berechneter Gebühr (`fee_amount`), neuer `sync_log.data_kind`
+  `Depotumsaetze` (Migration `0017`). Abruf je Depot in `PortfolioFetchService`, eigener `sync_log`-Eintrag.
+- `ComdirectFetch.Domain.TradeFeeCalculator` (rein, unit-getestet): Kauf = Abrechnung − Kurswert, Verkauf =
+  Kurswert − Abrechnung, auf Cent gerundet. Fremdwährungs-Trades (Kurs und Abrechnung in verschiedenen
+  Währungen) bekommen bewusst keine Gebühr.
+- `min-bookingDate` wird immer gesetzt: ohne liefert comdirect nur ein Standard-Zeitfenster (live: die
+  ältesten Trades fehlten). Paginierung wie bei den Kontoumsätzen, live geprüft.
+- Neues Dashboard `grafana/dashboards/gebuehren.json`: Summen (gesamt, Handel, Kontoführung/Karte),
+  Gebührenquote am Handelsvolumen, Gebühren je Monat nach Art, je Wertpapier, alle Trades, Gebühren-Effekt
+  auf die Rendite seit Tracking-Beginn. Die Gebühren-Panels in `cashflow.json` enthalten jetzt auch die
+  Handelsgebühren; Dashboard-Links zwischen Cashflow, Depot-Performance und Gebühren.
+- `GET /debug/summary` zählt auch `depot_transactions`.
+
+Live verifiziert: alle Trades gespeichert, keine Gebühr fehlt oder ist negativ, Summe der Abrechnungsbeträge
+gleich der Summe der `Securities`-Kontobuchungen, zweiter Lauf meldet keine neuen Zeilen, alle
+Dashboard-Abfragen per Grafana-API gegen die echte DB ausgeführt. Nebenbefund: `TransactionRepository.
+InsertIfNewAsync` zählt wegen `UseAffectedRows=false` unveränderte Duplikate als neu (nur Folge: die
+Kategorisierung läuft bei jedem Abruf an) – nicht geändert, im Konzept festgehalten.
+
 ## 1.1.0 – Depot-Performance: nur externe Ein-/Auszahlungen, Guthaben im Gesamtwert (Issue #12, Nachbesserung)
 
 Die Auswertung aus 0.23.0 wurde mit Daten gebaut, in denen es auf dem Verrechnungskonto nur Dividenden

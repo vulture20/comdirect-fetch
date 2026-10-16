@@ -9,6 +9,19 @@
   "time": { "from": "now-1y", "to": "now" },
   "refresh": "5m",
   "tags": ["comdirect-fetch"],
+  "links": [
+    {
+      "title": "Gebühren",
+      "tooltip": "Gebührenübersicht: Handelsgebühren je Trade und Kontoführung/Karte (Issue #19).",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/comdirect-gebuehren",
+      "targetBlank": false,
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true
+    }
+  ],
   "panels": [
     {
       "id": 1,

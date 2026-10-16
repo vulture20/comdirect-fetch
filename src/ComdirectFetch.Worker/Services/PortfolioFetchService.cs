@@ -15,6 +15,7 @@ public sealed class PortfolioFetchService(
     AccountRepository accountRepository,
     AccountBalanceRepository accountBalanceRepository,
     TransactionRepository transactionRepository,
+    DepotTransactionRepository depotTransactionRepository,
     SyncLogRepository syncLogRepository,
     IOptions<FetchOptions> options,
     ILogger<PortfolioFetchService> logger) : BackgroundService
@@ -113,6 +114,78 @@ public sealed class PortfolioFetchService(
                 logger.LogError(ex, "Depotübersicht für Depot {DepotId} fehlgeschlagen.", depot.DepotId);
                 await syncLogRepository.CompleteAsync(logId, SyncStatus.Fehlgeschlagen, DateTimeOffset.UtcNow, ex.Message, stoppingToken);
             }
+
+            await FetchDepotTransactionsAsync(token, portfolioId, depot.DepotId, stoppingToken);
+        }
+    }
+
+    /// <summary>
+    /// Depot-Transaktionen (Käufe/Verkäufe) samt Gebühr speichern (Issue #19, KONZEPT.md Abschnitt 17).
+    /// Eigener sync_log-Eintrag, damit ein Fehler hier nicht wie ein Fehler der Depotübersicht aussieht.
+    /// Holt bei jedem Lauf die komplette Historie und aktualisiert bestehende Zeilen - wie bei den
+    /// Kontoumsätzen gibt es keinen inkrementellen Cursor, und so zieht sich eine geänderte Berechnung
+    /// automatisch nach.
+    /// </summary>
+    private async Task FetchDepotTransactionsAsync(OAuthToken token, long portfolioId, string depotId, CancellationToken ct)
+    {
+        var logId = await syncLogRepository.InsertAsync(new SyncLogEntry
+        {
+            DataKind = SyncDataKind.Depotumsaetze,
+            PortfolioId = portfolioId,
+            ApplicationVersion = AppVersion.Current,
+            StartedAt = DateTimeOffset.UtcNow,
+            Status = SyncStatus.Erfolgreich,
+        }, ct);
+
+        try
+        {
+            var entries = await brokerageClient.GetDepotTransactionsAsync(token, depotId, ct);
+            var now = DateTimeOffset.UtcNow;
+            var inserted = 0;
+            foreach (var entry in entries)
+            {
+                var executionPrice = entry.ExecutionPrice?.Value;
+                var transactionValue = entry.TransactionValue?.Value;
+
+                // Kurs und Abrechnung in verschiedenen Währungen (Fremdwährungs-Trade, live noch nicht
+                // vorgekommen): die Differenz wäre keine Gebühr, also bewusst keine statt einer falschen.
+                var sameCurrency = entry.ExecutionPrice?.Unit == entry.TransactionValue?.Unit;
+                var isNew = await depotTransactionRepository.UpsertAsync(new DepotTransaction
+                {
+                    PortfolioId = portfolioId,
+                    ComdirectTransactionId = entry.TransactionId,
+                    BookingStatus = entry.BookingStatus ?? "UNKNOWN",
+                    BookingDate = entry.BookingDate,
+                    BusinessDate = entry.BusinessDate,
+                    TransactionType = entry.TransactionType,
+                    Direction = entry.TransactionDirection,
+                    Isin = entry.Instrument?.Isin,
+                    Wkn = entry.Instrument?.Wkn,
+                    InstrumentName = entry.Instrument?.Name,
+                    InstrumentType = entry.Instrument?.StaticData?.InstrumentType,
+                    Quantity = entry.Quantity.Value,
+                    ExecutionPrice = executionPrice,
+                    TransactionValue = transactionValue,
+                    Currency = entry.TransactionValue?.Unit ?? entry.ExecutionPrice?.Unit,
+                    FeeAmount = sameCurrency
+                        ? TradeFeeCalculator.Calculate(entry.TransactionDirection, entry.Quantity.Value, executionPrice, transactionValue)
+                        : null,
+                    FirstSeenAt = now,
+                }, ct);
+                if (isNew)
+                {
+                    inserted++;
+                }
+            }
+
+            logger.LogInformation(
+                "Depot-Transaktionen für Depot {DepotId}: {Count} abgerufen, {Inserted} neu.", depotId, entries.Count, inserted);
+            await syncLogRepository.CompleteAsync(logId, SyncStatus.Erfolgreich, DateTimeOffset.UtcNow, cancellationToken: ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Depot-Transaktionen für Depot {DepotId} fehlgeschlagen.", depotId);
+            await syncLogRepository.CompleteAsync(logId, SyncStatus.Fehlgeschlagen, DateTimeOffset.UtcNow, ex.Message, ct);
         }
     }
 

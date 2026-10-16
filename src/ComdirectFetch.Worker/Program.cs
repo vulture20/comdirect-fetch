@@ -48,6 +48,7 @@ builder.Services.AddSingleton<PortfolioRepository>();
 builder.Services.AddSingleton<PortfolioSnapshotRepository>();
 builder.Services.AddSingleton<PortfolioSettlementAccountRepository>();
 builder.Services.AddSingleton<TransactionRepository>();
+builder.Services.AddSingleton<DepotTransactionRepository>();
 builder.Services.AddSingleton<CategoryRepository>();
 builder.Services.AddSingleton<CategorizationRuleRepository>();
 builder.Services.AddSingleton<SyncLogRepository>();

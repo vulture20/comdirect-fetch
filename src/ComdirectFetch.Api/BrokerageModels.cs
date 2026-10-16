@@ -4,7 +4,7 @@ namespace ComdirectFetch.Api;
 
 // Verifiziert gegen die offizielle comdirect REST API Dokumentation/Swagger
 // (/opt/comdirect-fetch/docs) – Endpunkte /brokerage/clients/{userId}/v3/depots und
-// /brokerage/v3/depots/{depotId}/positions.
+// /brokerage/v3/depots/{depotId}/positions sowie (Issue #19) .../transactions.
 
 public sealed class DepotsResponse
 {
@@ -97,4 +97,55 @@ public sealed class StaticData
     /// </summary>
     [JsonPropertyName("instrumentType")]
     public string? InstrumentType { get; init; }
+}
+
+/// <summary>GET /brokerage/v3/depots/{depotId}/transactions (Issue #19). Paginiert wie die Kontoumsätze.</summary>
+public sealed class DepotTransactionsResponse
+{
+    [JsonPropertyName("values")]
+    public List<DepotTransactionEntry> Values { get; init; } = [];
+
+    [JsonPropertyName("paging")]
+    public PagingInfo? Paging { get; init; }
+}
+
+/// <summary>
+/// Live geprüft (Issue #19): transactionValue = Abrechnungsbetrag inkl. Gebühren, executionPrice =
+/// reiner Ausführungskurs; transactionType "BUY"/"SELL", transactionDirection "IN"/"OUT". Das im
+/// Swagger dokumentierte settlementDate kam live nicht mit.
+/// </summary>
+public sealed class DepotTransactionEntry
+{
+    [JsonPropertyName("transactionId")]
+    public required string TransactionId { get; init; }
+
+    [JsonPropertyName("bookingStatus")]
+    public string? BookingStatus { get; init; }
+
+    [JsonPropertyName("bookingDate")]
+    [JsonConverter(typeof(FlexibleDateConverter))]
+    public DateOnly? BookingDate { get; init; }
+
+    [JsonPropertyName("businessDate")]
+    [JsonConverter(typeof(FlexibleDateConverter))]
+    public DateOnly? BusinessDate { get; init; }
+
+    [JsonPropertyName("quantity")]
+    public required AmountValue Quantity { get; init; }
+
+    /// <summary>Nur befüllt, wenn die Anfrage mit Query-Parameter "with-attr=instrument" erfolgt.</summary>
+    [JsonPropertyName("instrument")]
+    public Instrument? Instrument { get; init; }
+
+    [JsonPropertyName("executionPrice")]
+    public AmountValue? ExecutionPrice { get; init; }
+
+    [JsonPropertyName("transactionValue")]
+    public AmountValue? TransactionValue { get; init; }
+
+    [JsonPropertyName("transactionDirection")]
+    public string? TransactionDirection { get; init; }
+
+    [JsonPropertyName("transactionType")]
+    public string? TransactionType { get; init; }
 }

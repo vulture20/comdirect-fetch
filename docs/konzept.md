@@ -925,15 +925,105 @@ erforderlich – bestehende lokale Klone (inkl. des eigenen Arbeitsverzeichnisse
 per `git fetch`+`git reset --hard`/`git fetch --force --tags` auf den neuen Stand gebracht
 werden, da sich sämtliche Commit-Hashes ab dem betroffenen Commit (v0.17.0) geändert haben.
 
+Eine zweite Bereinigung nach demselben Verfahren entfernte später weitere Angaben, die Rückschlüsse
+auf die echten Finanzdaten erlaubten: Beträge, Wertpapiernamen und Handelstage aus den Live-Befunden zu
+Abschnitt 13, echte Buchungstexte in Test-Fixtures, regionale Händlernamen in den Seed-Regeln
+(Migrationen 0004/0005 – nur Text ersetzt; das DbUp-Journal arbeitet nach Dateinamen, auf bestehenden
+Datenbanken läuft nichts erneut), Zählangaben (Umsätze, Konten, Positionen) und eine echte
+Umsatz-Referenz. Betroffene Issue-Texte und -Kommentare wurden gelöscht und bereinigt neu angelegt statt
+bearbeitet, da GitHub bei bearbeiteten Beiträgen den früheren Stand in der Bearbeitungshistorie zeigt.
+
 ### Offene Punkte
 
-- **Sichtbarkeit des Docker-Images**: konnte nicht automatisiert geprüft/umgestellt werden – der
-  verfügbare `gh`-Token hat nicht den nötigen `packages`-Scope
-  (`GET /user/packages/container/...` liefert 403). Muss manuell über die GitHub-Weboberfläche
-  (Repo → Packages → comdirect-fetch → Package settings → Change visibility) geprüft/umgestellt
-  werden.
+- **Sichtbarkeit des Docker-Images**: inzwischen öffentlich (manuell über die GitHub-Weboberfläche
+  umgestellt; die API erlaubt das nicht).
 - Diese Konzept-Datei sowie `CLAUDE.md`/`CHANGELOG.md` enthalten weiterhin ausführliche
   Beschreibungen der eigenen Systemlandschaft (Host-Setup, Grafana-Org-Name "BugZone",
   Kategorisierungsmuster echter, aber inzwischen anonymisierter Buchungen) – bewusst so belassen,
   da das für Dritte, die dieses Projekt als Vorlage für den eigenen Einsatz nutzen wollen,
   nützlicher Kontext ist und keine personenbezogenen Daten mehr enthält.
+
+## 17. Gebührenübersicht (umgesetzt in 1.2.0, Issue #19)
+
+Ziel: alle Gebühren sichtbar machen, insbesondere die Handelsgebühren, nicht nur die
+Kontoführung.
+
+### Ausgangslage
+
+Handelsgebühren kommen bei comdirect nicht als eigene Kontobuchung vor. Sie stecken im Betrag der
+`Securities`-Buchung, die den ganzen Trade abrechnet. Die Kategorie `Ordergebühren` aus der
+Starter-Konfiguration (Abschnitt 6) blieb deshalb leer; ihre Seed-Regel auf `TransactionType =
+'Wertpapierabrechnung'` kann nie greifen, weil comdirect diese Buchungen als `Securities` liefert. Eine
+Kategorie auf der Kontobuchung wäre auch grundsätzlich falsch, denn sie würde den ganzen Trade statt
+nur der Gebühr zählen. Regel und Kategorie bleiben trotzdem bestehen (Konfiguration des Nutzers, per
+Admin-Oberfläche löschbar); die Handelsgebühren kommen aus einer anderen Quelle.
+
+### Datenquelle (live geprüft, nicht aus der Doku übernommen)
+
+Kostenfelder beschreibt die Doku nur für die Ex-ante-Kostenindikation geplanter Orders. Live geprüft
+wurden deshalb `GET /brokerage/v3/depots/{depotId}/transactions` und `GET
+/brokerage/depots/{depotId}/v3/orders`:
+
+- `/orders` liefert keine Kosten, nur Status und Ausführungen.
+- `/transactions` liefert je Trade `quantity`, `executionPrice`, `transactionValue`,
+  `transactionDirection` (`IN`/`OUT`), `transactionType` (`BUY`/`SELL`), `bookingDate` und
+  `businessDate` (Handelstag), mit `with-attr=instrument` auch WKN/ISIN/Name/Typ. Kein Kostenfeld;
+  das im Swagger dokumentierte `settlementDate` kam live nicht mit.
+- **`transactionValue` ist der Abrechnungsbetrag inklusive Gebühren.** Abgleich gegen die
+  `Securities`-Kontobuchungen der verknüpften Verrechnungskonten (Abschnitt 13): für jeden Trade
+  centgenau gleich, und die Summen stimmen überein. Zuordnung dafür über WKN/ISIN im Buchungstext,
+  die comdirect bei jeder `Securities`-Buchung mitliefert.
+- Ohne `min-bookingDate` liefert comdirect nur ein Standard-Zeitfenster; die ältesten Trades fehlten.
+  Der Abruf setzt deshalb immer ein frühes Startdatum (`2000-01-01`, live akzeptiert).
+- Paginierung wie bei den Kontoumsätzen (`paging-first`/`paging-count`/`paging.matches`), live mit
+  kleiner Seitengröße gegengeprüft.
+
+### Modell
+
+Gebühr je Trade = Abrechnungsbetrag − Kurswert (Stück × Ausführungskurs) beim Kauf bzw. Kurswert −
+Abrechnungsbetrag beim Verkauf, auf Cent gerundet (`ComdirectFetch.Domain.TradeFeeCalculator`, rein und
+unit-getestet). Der Spread steckt im Ausführungskurs und ist damit bewusst nicht enthalten; eine
+Kursbewegung zwischen Order und Snapshot spielt anders als bei einer Näherung über Depot-Snapshots
+keine Rolle. Rundungsrauschen aus der Kursdarstellung lag live unter einem halben Cent; keine einzige
+berechnete Gebühr war negativ. Gebührenfreie Sparplan-Ausführungen ergeben 0,00 €, prozentuale
+Sparplan-Gebühren und Orderentgelte erscheinen in plausibler Höhe. Weichen die Währungen von Kurs und
+Abrechnung ab (Fremdwährungs-Trade, live noch nicht vorgekommen), wird keine Gebühr gespeichert statt
+einer falschen.
+
+### Umsetzung
+
+- Migration `0017_depot_transactions.sql`: Tabelle `depot_transactions` (Dedup über die
+  comdirect-`transactionId`, `fee_amount` berechnet) und neuer `sync_log.data_kind`
+  `Depotumsaetze`.
+- `ComdirectBrokerageClient.GetDepotTransactionsAsync` (rein lesend, daher über
+  `ComdirectResilience`), aufgerufen von `PortfolioFetchService` je Depot nach der Depotübersicht,
+  mit eigenem `sync_log`-Eintrag. Jeder Lauf holt die ganze Historie und aktualisiert vorhandene
+  Zeilen (`DepotTransactionRepository.UpsertAsync`) – wie bei den Kontoumsätzen gibt es keinen
+  inkrementellen Cursor, und eine geänderte Berechnung zieht sich so automatisch nach.
+- Ob eine Zeile neu ist, wird per Existenzprüfung bestimmt, nicht über die betroffenen Zeilen: Mit
+  den Standardeinstellungen von MySqlConnector (`UseAffectedRows=false`) zählt ein unverändertes
+  Duplikat bei `ON DUPLICATE KEY UPDATE` ebenfalls als 1 (live beobachtet). Dieselbe Schwäche hat
+  `TransactionRepository.InsertIfNewAsync` (Folge dort nur: die Kategorisierung neuer Umsätze läuft
+  bei jedem Abruf an, betrifft aber ohnehin nur unkategorisierte Umsätze).
+- Kontoführung/Kartenentgelt bleiben Kontobuchungen der Kategorie `Kontoführungsgebühren`; live
+  geprüft, dass die Entgelte dort und die Habenzinsen (gleicher `transaction_type = 'Bank fees'`,
+  positives Vorzeichen) korrekt unter `Zinsen/Dividenden` landen – keine neuen Regeln nötig.
+
+### Auswertung
+
+Neues Dashboard `grafana/dashboards/gebuehren.json` (uid `comdirect-gebuehren`): Summen im Zeitraum
+(gesamt, Handel, Kontoführung/Karte), Gebührenquote am Handelsvolumen, Gebühren je Monat gestapelt
+nach Art, Handelsgebühren je Wertpapier, eine Tabelle aller Trades sowie der Gebühren-Effekt auf die
+Rendite seit Tracking-Beginn (Handelsgebühren seit dem ersten Depot-Snapshot / aktuelles Kapital aus
+Abschnitt 13, in Prozentpunkten). Die Gebühren stecken in der Depot-Performance bereits im Gewinn;
+dieses Panel macht sichtbar, wie viel. Die Gebühren-Panels in `cashflow.json` enthalten jetzt
+zusätzlich die Handelsgebühren, Dashboard-Links verbinden Cashflow, Depot-Performance und Gebühren.
+Alle Abfragen live über die Grafana-API gegen die echte DB geprüft (Gesamt = Handel + Konto, Gesamt
+identisch mit dem Cashflow-Panel).
+
+### Nicht abgedeckt
+
+- Fremdwährungs-Trades (siehe oben) und Kosten, die nicht im Abrechnungsbetrag stecken, z. B. der
+  Spread oder laufende Fondskosten (TER).
+- Steuern und Fremdspesen auf Dividenden: Dividenden kommen bereits netto auf dem Konto an, die
+  Abzüge liefert die API nicht getrennt.

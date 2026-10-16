@@ -226,7 +226,7 @@ falsch codiert dargestellten Umlaute in geloggten Fehlertexten (Issue #8) sind b
 
 Dieses Projekt betreibt kein eigenes Grafana – die Auswertungen werden in eine bereits
 vorhandene Grafana-Instanz eingebunden (KONZEPT.md Abschnitt 2/6: „Grafana ist optional"
-heißt hier konkret: extern und schon da, nicht Teil dieses Deployments). Vier Dashboards,
+heißt hier konkret: extern und schon da, nicht Teil dieses Deployments). Fünf Dashboards,
 alle mit echten Daten verifiziert:
 
 - **`grafana/dashboards/salden.json`** – „Salden & Vermögen" (Phase 1): Saldo-Verlauf je
@@ -237,8 +237,8 @@ alle mit echten Daten verifiziert:
   Fonds/Zertifikat/… – Issue #4), Positionstabelle, sowie Kurswert- und
   Gewinn/Verlust-Entwicklung je Einzelposition über die Zeit.
 - **`grafana/dashboards/cashflow.json`** – „Cashflow & Kosten" (Phase 3): Einnahmen/
-  Ausgaben/Netto je Monat, Ausgaben nach Kategorie, Gebührenübersicht (Kontoführungs-/
-  Ordergebühren). Interne Umbuchungen zwischen eigenen Konten sind ausgeschlossen. Enthält
+  Ausgaben/Netto je Monat, Ausgaben nach Kategorie, Gebührenübersicht (Kontoführung und
+  seit 1.2.0 Handelsgebühren). Interne Umbuchungen zwischen eigenen Konten sind ausgeschlossen. Enthält
   seit 0.18.0 einen Dashboard-Link „Kategorien/Regeln bearbeiten →", der `/admin/rules/`
   direkt öffnet.
 - **`grafana/dashboards/depot-performance.json`** – „Depot-Performance" (Phase 4): zwei
@@ -250,6 +250,11 @@ alle mit echten Daten verifiziert:
   Return – bereinigt um externe Ein-/Auszahlungen (Käufe/Verkäufe über das Verrechnungskonto sind
   intern) und ausgehend vom Depotwert zum Trackingbeginn; gelten also für den Zeitraum *seit*
   Trackingbeginn, nicht für die gesamte Depothistorie (siehe `docs/konzept.md` Abschnitt 13).
+- **`grafana/dashboards/gebuehren.json`** – „Gebühren" (seit 1.2.0, Issue #19): Handelsgebühren je
+  Trade aus den comdirect-Depot-Transaktionen (Abrechnungsbetrag minus Kurswert) und
+  Kontoführung/Kartenentgelt; Summen, Gebührenquote am Handelsvolumen, Verlauf je Monat nach Art,
+  je Wertpapier, alle Trades und der Gebühren-Effekt auf die Rendite seit Tracking-Beginn (siehe
+  `docs/konzept.md` Abschnitt 17).
 
 Alle JSON-Dateien sind die Quelle der Wahrheit und werden per
 [Grafana-HTTP-API](https://grafana.com/docs/grafana/latest/developers/http_api/dashboard/)
@@ -259,7 +264,7 @@ uid `comdirect-mariadb` muss dort angelegt sein (Host/Port/DB/User/Passwort aus 
 dafür sind in dieser bestehenden Grafana-Instanz Admin-Rechte nötig – ein Service-Account mit
 nur Editor-Rolle darf keine Datenquellen anlegen.
 
-Beides (Datenquelle + alle vier Dashboards) automatisiert per
+Beides (Datenquelle + alle fünf Dashboards) automatisiert per
 [`scripts/grafana-setup.sh`](scripts/grafana-setup.sh) statt manueller Ad-hoc-API-Calls –
 nützlich bei Erstinbetriebnahme oder nach einem Grafana-Rebuild auf einem neuen Host:
 

@@ -34,9 +34,9 @@ to see them) — not an isolated sandbox. Two things that already bit us once:
   `grafana` service in `docker/docker-compose.yml` and no `grafana/provisioning/` directory
   (an earlier "self-contained deployment" version of both existed briefly and was removed
   again as speculative complexity for a hypothetical fresh install without existing Grafana —
-  don't re-add either without the user asking). All four comdirect-fetch dashboards
-  (`grafana/dashboards/{salden,depot,cashflow,depot-performance}.json`, uids
-  `comdirect-{salden,depot,cashflow,depot-performance}`) live in this repo as their source of
+  don't re-add either without the user asking). All five comdirect-fetch dashboards
+  (`grafana/dashboards/{salden,depot,cashflow,depot-performance,gebuehren}.json`, uids
+  `comdirect-{salden,depot,cashflow,depot-performance,gebuehren}`) live in this repo as their source of
   truth and are provisioned into the *existing* Grafana instance, plus the MySQL/MariaDB
   datasource (uid `comdirect-mariadb`), via `scripts/grafana-setup.sh` (Issue #9) — host-only
   tooling like `comdirectctl.sh` (not baked into the Docker image, no `AppVersion` bump needed).
@@ -330,6 +330,22 @@ Do this as part of the change itself, not only when the user asks for it.
   `time_weighted_return_pct`; migrations 0014–0016), so late-arriving bookings self-heal and a model
   change backfills history automatically. `grafana/dashboards/depot-performance.json` shows the old
   `acquisition_value` view (full purchase history, no cash) above the new since-tracking-start view.
+- **Fee overview (v1.2.0, `docs/konzept.md` §17, Issue #19)**: trading fees are not separate bookings at
+  comdirect, they're inside the `Securities` booking amount. `GET /brokerage/v3/depots/{id}/transactions`
+  (`ComdirectBrokerageClient.GetDepotTransactionsAsync`, read-only → through `ComdirectResilience`) is
+  stored in `depot_transactions` (migration 0017, also adds `sync_log.data_kind` `Depotumsaetze`) by
+  `PortfolioFetchService`. **Live-verified**: `transactionValue` is the settlement amount *including* fees
+  (matched every `Securities` account booking to the cent), so `TradeFeeCalculator` (pure, unit-tested)
+  computes fee = settlement − quantity × executionPrice for buys (reverse for sells), rounded to cents; no
+  fee for mixed-currency trades. Without `min-bookingDate` comdirect only returns a default time window
+  (oldest trades were missing) — always send it. `/orders` has no cost data. The `Ordergebühren` seed rule
+  (`TransactionType = 'Wertpapierabrechnung'`) can never match (type is `Securities`) and is left alone.
+  **MySqlConnector gotcha**: with the default `UseAffectedRows=false`, `ON DUPLICATE KEY UPDATE` returns 1
+  for an unchanged duplicate too, so "affected rows == 1 means new" is wrong — `DepotTransactionRepository`
+  uses an explicit existence check instead; `TransactionRepository.InsertIfNewAsync` still has the flaw
+  (harmless: only re-triggers categorization of uncategorized rows). Don't flip `UseAffectedRows` globally:
+  `UPDATE`s with unchanged values would then return 0 and look like "not found" to the CRUD endpoints.
+  `grafana/dashboards/gebuehren.json` + fee panels in `cashflow.json` include trading fees.
 - **Security hardening (v1.0.0, breaking change)**: a manual security review found `/auth/*`,
   `/debug/*` and `POST /admin/credentials` relied on an unverified "host-local only" assumption —
   live-disproven, `docker-compose.yml`'s `ports: "8750:8080"` binds all interfaces and the host

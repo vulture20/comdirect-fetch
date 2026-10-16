@@ -15,6 +15,7 @@ public sealed class DiagnosticsRepository(IDbConnectionFactory connectionFactory
             UNION ALL SELECT 'portfolio_snapshots', COUNT(*) FROM portfolio_snapshots
             UNION ALL SELECT 'portfolio_positions', COUNT(*) FROM portfolio_positions
             UNION ALL SELECT 'transactions', COUNT(*) FROM transactions
+            UNION ALL SELECT 'depot_transactions', COUNT(*) FROM depot_transactions
             UNION ALL SELECT 'sync_log', COUNT(*) FROM sync_log;
             """;
 
