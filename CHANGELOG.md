@@ -4,6 +4,27 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 1.2.2 – Session übersteht kurze Netzwerkfehler (Issue #22)
+
+Live zweimal passiert: ein kurzer Verbindungsfehler beim Token-Refresh verwarf die Session, danach war eine neue
+TAN-Freigabe nötig. Ein Refresh ist nicht TAN-relevant, ein erneuter Versuch also gefahrlos.
+
+- `ComdirectResilience.IsTransient`: vorübergehende Fehler sind Netzwerkfehler (`HttpRequestException` ohne
+  Statuscode), 429/5xx und Timeouts, die nicht der Aufrufer ausgelöst hat. Die Retry-Pipeline wiederholt jetzt auch
+  bei geworfenen Verbindungsfehlern (weiterhin nur für Token- und Datenabrufe, nicht für die TAN-Endpunkte).
+- `EnsureSuccessWithBodyAsync` gibt den HTTP-Statuscode an die Exception weiter, damit eine Ablehnung durch
+  comdirect von einem Netzwerkfehler unterscheidbar ist.
+- `ComdirectAuthCoordinator.RefreshAsync` behält bei einem vorübergehenden Fehler den Token
+  (`TransientRefreshException`) und verwirft ihn nur noch bei einer echten Ablehnung (übrige 4xx).
+  `TokenRefreshBackgroundService` versucht es dann nach 30 s, 60 s und 120 s erneut und protokolliert den Lauf als
+  `Fehlgeschlagen` statt `FreigabeErforderlich`. Auch die Wiederherstellung beim Start behält den Token bei einem
+  vorübergehenden Fehler.
+- Ein Ausfall, der länger dauert als die Gültigkeit des Refresh-Tokens (laut Community-Quellen rund 20 Minuten),
+  erfordert weiterhin eine neue TAN-Freigabe: comdirect lehnt den Token dann ab.
+
+Issue #20 (Rate-Limiting im Dauerbetrieb) dabei ausgewertet: drei Wochen Dauerbetrieb ohne ein einziges 429 seit
+dem ersten Testtag.
+
 ## 1.2.1 – Depot-Performance: Sparplan-Käufe zum Depot-Buchungstag, Snapshots im deutschen Kalendertag (Issue #18)
 
 Erster Sparplan-Lauf im Trackingzeitraum, live geprüft: die Anteile erscheinen erst am Depot-Buchungstag

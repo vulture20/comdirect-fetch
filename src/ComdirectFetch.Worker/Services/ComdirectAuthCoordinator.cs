@@ -163,6 +163,15 @@ public sealed class ComdirectAuthCoordinator(
 
             await PersistCurrentTokenAsync(cancellationToken);
         }
+        catch (Exception ex) when (ComdirectResilience.IsTransient(ex, cancellationToken))
+        {
+            // Live zweimal passiert: ein kurzer Netzwerkausfall verwarf die Session und erzwang eine neue
+            // TAN-Freigabe. Ein Refresh ist nicht TAN-relevant - also Token behalten und später erneut
+            // versuchen. Lehnt comdirect den Token dann ab (z. B. weil der Ausfall länger als seine
+            // Lebensdauer dauerte), greift der Pfad unten.
+            logger.LogWarning(ex, "Token-Refresh vorübergehend fehlgeschlagen – Token bleibt erhalten, erneuter Versuch folgt.");
+            throw new TransientRefreshException(ex);
+        }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Token-Refresh fehlgeschlagen – Session vermutlich abgelaufen. Neue TAN-Freigabe erforderlich.");
@@ -220,6 +229,12 @@ public sealed class ComdirectAuthCoordinator(
         try
         {
             await RefreshAsync(cancellationToken);
+        }
+        catch (TransientRefreshException)
+        {
+            // Netzwerk beim Start noch nicht da o. ä.: Token behalten, der TokenRefreshBackgroundService
+            // versucht es weiter. Eine echte Ablehnung räumt dort später auf.
+            logger.LogWarning("Wiederhergestellte comdirect-Session konnte beim Start noch nicht erneuert werden – nächster Versuch im Hintergrund.");
         }
         catch (Exception)
         {

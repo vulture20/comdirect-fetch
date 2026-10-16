@@ -80,6 +80,13 @@ Five projects under `src/`, referencing each other in one direction only
   challenge or resubmit a TAN code. If you add a new comdirect call, decide consciously
   whether it's "safe to retry" (token/data, idempotent) or "TAN-sensitive" (session
   validate/activate) before wiring it through `ComdirectResilience.SendWithRetryAsync`.
+  Since v1.2.2 (Issue #22) the pipeline also retries thrown connection errors/timeouts
+  (`ComdirectResilience.IsTransient`), and `EnsureSuccessWithBodyAsync` sets
+  `HttpRequestException.StatusCode` so "comdirect rejected it" (4xx) is distinguishable from "no answer"
+  (`StatusCode` null). `ComdirectAuthCoordinator.RefreshAsync` keeps the token on transient failures
+  (`TransientRefreshException`, `TokenRefreshBackgroundService` retries after 30/60/120 s) and only drops the
+  session + notifies on a real rejection — before that, a few seconds of network outage (live: twice, Sunday
+  ~22:00, 14 days apart) forced a new TAN approval. Never broaden this to the TAN endpoints.
 - **`ComdirectFetch.Data`** — Dapper + MySqlConnector repositories (one per table) and
   `DatabaseMigrator`, which runs the DbUp-based migration on startup against the scripts in
   `db/migrations/` (embedded into the assembly via the `.csproj`, not copied at runtime).
@@ -191,8 +198,9 @@ Do this as part of the change itself, not only when the user asks for it.
   in `Program.cs` before `app.Run()`. Without that env var set, behavior is unchanged
   (in-memory only, fresh TAN approval needed on every restart) — it's opt-in, and only the
   encrypted blob is stored, never the key itself.
-- Rate limiting has real retry/backoff now (see above) but is untested at production data
-  volumes (large depots, many accounts, long transaction history).
+- Rate limiting has real retry/backoff now (see above); three weeks of continuous operation showed no 429 after
+  the first test day (Issue #20, closed). Production-scale volumes (large depots, many accounts) can't be
+  reproduced with the available access.
 - Umlaut garbling in logged comdirect error bodies (Issue #8) is fixed. Root cause confirmed by
   reproduction (not guessed): comdirect's error response bytes are actually Latin-1/ISO-8859-1
   encoded with no reliable charset header, but .NET's default `ReadAsStringAsync` assumes UTF-8

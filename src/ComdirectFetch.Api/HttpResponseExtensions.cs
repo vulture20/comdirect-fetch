@@ -2,7 +2,7 @@ using ComdirectFetch.Domain;
 
 namespace ComdirectFetch.Api;
 
-internal static class HttpResponseExtensions
+public static class HttpResponseExtensions
 {
     /// <summary>
     /// Wie EnsureSuccessStatusCode(), liest bei einem Fehler aber zusätzlich den Response-Body
@@ -21,7 +21,11 @@ internal static class HttpResponseExtensions
 
         var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
         var body = TextDecoding.DecodeUtf8WithLatin1Fallback(bytes);
+        // StatusCode mitgeben: nur so lässt sich eine Ablehnung durch comdirect von einem Netzwerkfehler
+        // (StatusCode null) unterscheiden, siehe ComdirectResilience.IsTransient.
         throw new HttpRequestException(
-            $"{(int)response.StatusCode} {response.ReasonPhrase} für {response.RequestMessage?.RequestUri}: {body}");
+            $"{(int)response.StatusCode} {response.ReasonPhrase} für {response.RequestMessage?.RequestUri}: {body}",
+            inner: null,
+            response.StatusCode);
     }
 }
