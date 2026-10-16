@@ -261,8 +261,8 @@ Diese Pflege übernimmt Claude Code während der Entwicklung selbstständig als 
   `accounts.comdirect_account_id`), `transaction_type = 'Securities'` (nicht das dokumentierte
   „Wertpapierabrechnung”), und – erst nach den ersten echten Trades über das Verrechnungskonto
   möglich – die Erkenntnis, dass Käufe/Verkäufe dort intern sind und nur Geld von außen zählt.
-  Offen: eine echte externe Überweisung auf/vom Verrechnungskonto liegt noch nicht vor (Annahme
-  `Transfer`, nur per Unit-Test abgesichert). Der Zeitbezug von Sparplan-Käufen ist seit 1.2.1 live
+  Überweisungen auf/vom Verrechnungskonto kommen live als `Transfer` (Issue #17, Testüberweisung);
+  offen ist nur noch eine einzelne Bewegung über einen Tageswechsel. Der Zeitbezug von Sparplan-Käufen ist seit 1.2.1 live
   geklärt (Issue #18, Abschnitt 13: Depot-Buchungstag).
 - **Auth-Status über Neustarts persistieren** (Abschnitt 3): umgesetzt (siehe `CHANGELOG.md` 0.11.0, `db/migrations/0006_auth_token_store.sql`). Der Session-Token wird bei optional gesetztem `Comdirect__TokenEncryptionKeyBase64` AES-256-GCM-verschlüsselt in der DB abgelegt und beim Start automatisch wiederhergestellt (inkl. Refresh zur Gültigkeitsprüfung) – ein Neustart innerhalb der Refresh-Token-Gültigkeit braucht dann keine neue TAN-Freigabe mehr. Ohne gesetzten Schlüssel bleibt das Verhalten wie zuvor (In-Memory-only). Live verifiziert (Neustart nach echter TAN-Freigabe, Session danach direkt wieder `Authentifiziert`). Erledigt.
 - **Sichere Ablage der comdirect-Zugangsdaten** (Abschnitt 4/10): umgesetzt (siehe
@@ -684,7 +684,10 @@ Neues, im ursprünglichen Wortlaut von Issue #12 („nur externe Zu-/Abflüsse z
   Verrechnungskonto = extern (Vorzeichen), `Interest / Dividends` auf dem Verrechnungskonto = Ertrag
   (steckt im Guthaben), auf einem allgemeinen Konto = Auszahlung des Ertrags, alles andere = ignoriert
   (`Other`; Gründe wie zuvor: das Girokonto trägt auch Alltagsumsätze). Für `Transfer` auf dem
-  Verrechnungskonto liegt noch **kein** echter Umsatz vor – reine Annahme, nur per Unit-Test abgesichert.
+  Verrechnungskonto ist der Typ seit einer Testüberweisung (hin und zurück am selben Tag) live bestätigt
+  (Issue #17): Buchungstext „Uebertrag auf …“, Vorzeichen = Richtung, netto keine Änderung an Kapital,
+  Guthaben und TWR. Live noch offen ist eine einzelne Bewegung über einen Tageswechsel (Kapitalsprung);
+  die ist nur per Unit-Test abgesichert.
 - **Bezugspunkt = erster Snapshot** (Trackingbeginn). Sein Gesamtwert ist das Startkapital
   (`net_invested_capital`), danach kommen nur noch externe Bewegungen hinzu. Behebt die frühere
   Schwäche, dass Kapital und Rendite bei einem lange bestehenden Depot nur die getrackten Käufe kannten

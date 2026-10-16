@@ -157,6 +157,19 @@ public class DepotPerformanceCalculatorTests
     }
 
     [Fact]
+    public void Ueberweisung_hin_und_zurueck_am_selben_Tag_hebt_sich_auf()
+    {
+        // Wie die live beobachtete Testüberweisung (synthetische Beträge): Kapital, Guthaben und TWR bleiben gleich.
+        var deposit = Tx(DefaultAccount, 1m, "Transfer", 2);
+        var withdrawal = Tx(DefaultAccount, -1m, "Transfer", 2);
+        var result = Calculate([Snapshot(1, At(1), 10_000m), Snapshot(2, At(2, 20), 10_000m)], latestBalance: 500m, deposit, withdrawal);
+
+        Assert.Equal(result[0].NetInvestedCapital, result[1].NetInvestedCapital);
+        Assert.Equal(500m, result[1].SettlementCash);
+        Assert.Equal(0m, result[1].TimeWeightedReturnPercent);
+    }
+
+    [Fact]
     public void Sparplan_vom_Girokonto_ist_eine_Einzahlung_am_Buchungstag()
     {
         var savingsPlan = Tx(GiroAccount, -100m, "Securities", 2, 4);

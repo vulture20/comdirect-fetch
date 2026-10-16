@@ -303,7 +303,7 @@ Do this as part of the change itself, not only when the user asks for it.
   cash of the *default* settlement account only; only money crossing the depot boundary is a capital
   flow. `DepotCashflowClassifier.Classify(tx, isDefaultSettlementAccount)`: `Securities` on the
   Verrechnungskonto = internal (cash ↔ securities), on the Girokonto = external (savings plan),
-  `Transfer` on the Verrechnungskonto = external (sign; **assumption, no real example yet**),
+  `Transfer` on the Verrechnungskonto = external (sign; type live-confirmed by a same-day test transfer in and out, Issue #17 — a single movement across a day boundary is still unverified live),
   `Interest / Dividends` on the Verrechnungskonto = return (already in the cash), everything else
   ignored — never classify by account alone, the Girokonto also carries everyday spending (an early
   account-based version live-counted roughly ten times the correct capital). The v0.23.0 model
