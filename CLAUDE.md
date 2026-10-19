@@ -85,7 +85,8 @@ Five projects under `src/`, referencing each other in one direction only
   `HttpRequestException.StatusCode` so "comdirect rejected it" (4xx) is distinguishable from "no answer"
   (`StatusCode` null). `ComdirectAuthCoordinator.RefreshAsync` keeps the token on transient failures
   (`TransientRefreshException`, `TokenRefreshBackgroundService` retries after 30/60/120 s) and only drops the
-  session + notifies on a real rejection — before that, a few seconds of network outage (live: twice, Sunday
+  session + notifies on a real rejection (v1.2.3: a 401 whose body contains `HttpStatus: '5xx'` — comdirect's
+  login service wrapping an internal error, live-observed during an outage — counts as transient too) — before that, a few seconds of network outage (live: twice, Sunday
   ~22:00, 14 days apart) forced a new TAN approval. Never broaden this to the TAN endpoints.
 - **`ComdirectFetch.Data`** — Dapper + MySqlConnector repositories (one per table) and
   `DatabaseMigrator`, which runs the DbUp-based migration on startup against the scripts in

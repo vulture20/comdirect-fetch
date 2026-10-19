@@ -20,7 +20,8 @@ public static class HttpResponseExtensions
         }
 
         var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-        var body = TextDecoding.DecodeUtf8WithLatin1Fallback(bytes);
+        // Gekürzt: bei Störungen liefert comdirect statt JSON teils eine komplette HTML-Fehlerseite.
+        var body = ErrorBodyCondenser.Condense(TextDecoding.DecodeUtf8WithLatin1Fallback(bytes));
         // StatusCode mitgeben: nur so lässt sich eine Ablehnung durch comdirect von einem Netzwerkfehler
         // (StatusCode null) unterscheiden, siehe ComdirectResilience.IsTransient.
         throw new HttpRequestException(

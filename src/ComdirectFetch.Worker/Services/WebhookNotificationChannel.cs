@@ -32,6 +32,10 @@ public sealed class WebhookNotificationChannel(
 
         using var response = await httpClient.PostAsJsonAsync(_options.WebhookUrl, payload, cancellationToken);
         response.EnsureSuccessStatusCode();
-        logger.LogInformation("Benachrichtigung per Webhook an {Url} gesendet.", _options.WebhookUrl);
+        // Nur Schema und Host loggen: Pfad und Query können Geheimnisse enthalten (z. B. Telegram-Bot-Token).
+        logger.LogInformation("Benachrichtigung per Webhook an {Host} gesendet.", DescribeTarget(_options.WebhookUrl));
     }
+
+    public static string DescribeTarget(string? url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.GetComponents(UriComponents.SchemeAndServer, UriFormat.UriEscaped) : "(ungültige URL)";
 }

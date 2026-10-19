@@ -201,7 +201,12 @@ print_human_status() {
   echo "$data" | jq -r '.counts | to_entries[] | "  \(.key)\t\(.value)"' | column -t -s $'\t'
   echo
   echo "Letzte Abrufe (neueste zuerst):"
-  echo "$data" | jq -r '.recentSyncLog[] | "  [\(.status)]\t\(.dataKind)\t\(.errorMessage // "")"' | column -t -s $'\t'
+  # errorMessage einzeilig und gekürzt: ältere Einträge können komplette HTML-Fehlerseiten von comdirect
+  # enthalten, die sonst über Hunderte Zeilen den Bildschirm füllen (vollständig: status --json).
+  echo "$data" | jq -r '.recentSyncLog[]
+    | (.errorMessage // "" | gsub("\\s+"; " ")) as $msg
+    | "  [\(.status)]\t\(.dataKind)\t\(if ($msg | length) > 160 then $msg[0:160] + "…" else $msg end)"' \
+    | column -t -s $'\t'
 }
 
 cmd_auth_start() {

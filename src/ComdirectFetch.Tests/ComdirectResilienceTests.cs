@@ -151,4 +151,22 @@ public class ComdirectResilienceTests
         Assert.Equal(HttpStatusCode.Unauthorized, exception.StatusCode);
         Assert.False(ComdirectResilience.IsTransient(exception, CancellationToken.None));
     }
+
+    [Theory]
+    [InlineData("401  für https://api.comdirect.de/oauth/token: {\"error\":\"unauthorized\",\"error_description\":\"Fehler beim Corona-Login-Service. HttpStatus: '500'\"}", true)]
+    [InlineData("401  für https://api.comdirect.de/oauth/token: {\"error\":\"invalid_token\",\"error_description\":\"Invalid refresh token\"}", false)]
+    public void IsTransient_erkennt_als_401_verpackten_Serverfehler(string message, bool expected)
+    {
+        var exception = new HttpRequestException(message, inner: null, HttpStatusCode.Unauthorized);
+
+        Assert.Equal(expected, ComdirectResilience.IsTransient(exception, CancellationToken.None));
+    }
+
+    [Fact]
+    public void IsTransient_verpackter_Serverfehler_nur_bei_401()
+    {
+        var exception = new HttpRequestException("HttpStatus: '500'", inner: null, HttpStatusCode.BadRequest);
+
+        Assert.False(ComdirectResilience.IsTransient(exception, CancellationToken.None));
+    }
 }

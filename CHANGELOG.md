@@ -4,6 +4,29 @@ Versionshistorie der Anwendung (Semantic Versioning, siehe `docs/konzept.md` Abs
 Die Datenbank-Schema-Version wird separat über die fortlaufend nummerierten Dateien in
 `db/migrations/` nachvollzogen.
 
+## 1.2.3 – Störungsfestere Session, gekürzte Fehlertexte, kein Webhook-Geheimnis im Log
+
+Live passiert: bei einer comdirect-Störung lieferte `/oauth/token` statt JSON eine komplette HTML-Fehlerseite
+(503, mehrere KB inkl. CSS und SVG-Logo). Sie stand ungekürzt in Log und `sync_log.error_message`, und
+`comdirectctl.sh status` gab sie über Hunderte Zeilen aus.
+
+- `ErrorBodyCondenser.Condense` (Domain, unit-getestet): eine HTML-Seite wird auf ihren Titel reduziert, sonst
+  werden Zeilenumbrüche und Leerraum zusammengefasst und der Text auf 500 Zeichen begrenzt.
+  `EnsureSuccessWithBodyAsync` nutzt das für alle comdirect-Fehler-Bodies; die üblichen JSON-Fehlertexte bleiben
+  unverändert.
+- `comdirectctl.sh status` zeigt Fehlermeldungen einzeilig und auf 160 Zeichen gekürzt (betrifft auch bereits
+  gespeicherte Einträge; vollständig weiterhin über `status --json`).
+- Bei derselben Störung lehnte comdirect den nächsten Refresh-Versuch mit
+  `401 … "Fehler beim Corona-Login-Service. HttpStatus: '500'"` ab – ein interner Serverfehler, nur als 401
+  verpackt. Die Session wurde verworfen, eine neue TAN-Freigabe war nötig. `ComdirectResilience.IsTransient`
+  behandelt einen 401 mit `HttpStatus: '5xx'` im Fehlertext jetzt als vorübergehend; der Token bleibt erhalten und
+  der Refresh wird wie bei 503 erneut versucht. Ein echter 401 (abgelaufener Token) verwirft die Session wie bisher.
+- Webhook-Benachrichtigung: das Log enthielt die vollständige Webhook-URL, bei Telegram also Bot-Token und Chat-ID –
+  einmal in der eigenen Erfolgsmeldung, zusätzlich in den Standard-Logzeilen von `IHttpClientFactory` (die nur die
+  Query maskieren, nicht den Pfad). Geloggt werden jetzt nur noch Schema und Host
+  (`WebhookNotificationChannel.DescribeTarget`), die HttpClient-Logger sind für diesen Client abgeschaltet. Wer den
+  Webhook schon vorher genutzt hat, sollte das Token rotieren, falls die Logs irgendwo gelandet sind.
+
 ## 1.2.2 – Session übersteht kurze Netzwerkfehler (Issue #22)
 
 Live zweimal passiert: ein kurzer Verbindungsfehler beim Token-Refresh verwarf die Session, danach war eine neue

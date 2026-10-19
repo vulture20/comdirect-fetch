@@ -32,7 +32,9 @@ builder.Services.AddSingleton<ComdirectAuthCoordinator>();
 // aktivierten Kanäle findet, ohne sie einzeln zu kennen.
 builder.Services.AddSingleton<EmailNotificationChannel>();
 builder.Services.AddSingleton<INotificationChannel>(sp => sp.GetRequiredService<EmailNotificationChannel>());
-builder.Services.AddHttpClient<WebhookNotificationChannel>();
+// Ohne die Standard-Logger von IHttpClientFactory: die loggen die Request-URL samt Pfad, und der kann ein
+// Geheimnis enthalten (live: Telegram-Bot-Token in https://api.telegram.org/bot<token>/sendMessage).
+builder.Services.AddHttpClient<WebhookNotificationChannel>().RemoveAllLoggers();
 builder.Services.AddSingleton<INotificationChannel>(sp => sp.GetRequiredService<WebhookNotificationChannel>());
 builder.Services.AddSingleton<NotificationService>();
 

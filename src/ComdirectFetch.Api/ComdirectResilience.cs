@@ -14,7 +14,7 @@ namespace ComdirectFetch.Api;
 /// 5-Challenge-Sperre beitragen (siehe ComdirectAuthClient). Nur für Token- und
 /// Datenabrufe, die gefahrlos wiederholbar sind.
 /// </summary>
-public static class ComdirectResilience
+public static partial class ComdirectResilience
 {
     public const int MaxRetryAttempts = 4;
 
@@ -41,16 +41,31 @@ public static class ComdirectResilience
     /// Vorübergehender Fehler, bei dem ein erneuter Versuch sinnvoll ist: keine Antwort von comdirect
     /// (Verbindung/DNS/TLS - <see cref="HttpRequestException"/> ohne StatusCode), 429/5xx oder ein Timeout,
     /// den nicht der Aufrufer selbst ausgelöst hat. Eine echte Ablehnung (übrige 4xx, z. B. ein ungültiger
-    /// Refresh-Token) ist nicht transient.
+    /// Refresh-Token) ist nicht transient - mit einer Ausnahme, siehe <see cref="IsWrappedServerError"/>.
     /// </summary>
     public static bool IsTransient(Exception exception, CancellationToken callerToken) => exception switch
     {
         HttpRequestException { StatusCode: null } => true,
-        HttpRequestException { StatusCode: { } status } => IsTransientStatus(status),
+        HttpRequestException { StatusCode: { } status } ex => IsTransientStatus(status) || IsWrappedServerError(ex),
         OperationCanceledException => !callerToken.IsCancellationRequested,
         TimeoutException => true,
         _ => false,
     };
+
+    /// <summary>
+    /// Live bei einer comdirect-Störung: nach einem 503 lehnte /oauth/token den Refresh mit
+    /// 401 {"error":"unauthorized","error_description":"Fehler beim Corona-Login-Service. HttpStatus: '500'"} ab -
+    /// ein interner Serverfehler, nur als 401 verpackt, kein ungültiger Token. Die Session wurde deshalb
+    /// verworfen und eine neue TAN-Freigabe war nötig. Erkannt wird das an "HttpStatus: '5xx'" im Fehlertext
+    /// (EnsureSuccessWithBodyAsync hängt den Body an die Message an). Ist der Token tatsächlich abgelaufen,
+    /// antwortet comdirect ohne diesen Zusatz, und die Session wird wie bisher verworfen.
+    /// </summary>
+    private static bool IsWrappedServerError(HttpRequestException exception) =>
+        exception.StatusCode == System.Net.HttpStatusCode.Unauthorized
+        && WrappedServerErrorRegex().IsMatch(exception.Message);
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"HttpStatus:\s*'5\d\d'")]
+    private static partial System.Text.RegularExpressions.Regex WrappedServerErrorRegex();
 
     private static bool IsTransientStatus(System.Net.HttpStatusCode status) =>
         (int)status == 429 || (int)status >= 500;
